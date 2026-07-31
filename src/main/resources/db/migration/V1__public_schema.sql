@@ -66,6 +66,23 @@ CREATE UNIQUE INDEX idx_subscription_one_active
     ON subscription(tenant_id) WHERE status = 'ACTIVE';
 
 -- ---------------------------------------------------------------------------
+-- tenant_identity_provider: configuración OIDC/JWT por tenant.
+-- Sin esta fila, ningún JWT de ese tenant puede validarse.
+-- ---------------------------------------------------------------------------
+CREATE TABLE tenant_identity_provider (
+    tenant_id           UUID PRIMARY KEY REFERENCES tenant(id) ON DELETE CASCADE,
+    issuer              VARCHAR(255) NOT NULL,        -- claim 'iss' esperado
+    jwks_uri            VARCHAR(500) NOT NULL,        -- endpoint público de llaves
+    audience            VARCHAR(255) NOT NULL,        -- claim 'aud' esperado (tu API)
+    allowed_algorithms  TEXT[] NOT NULL DEFAULT '{RS256}',
+    clock_skew_seconds  INTEGER NOT NULL DEFAULT 60,
+    is_active           BOOLEAN NOT NULL DEFAULT true,
+    created_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
+    CONSTRAINT chk_no_none_alg CHECK (NOT ('none' = ANY(allowed_algorithms)))
+);
+
+-- ---------------------------------------------------------------------------
 -- api_key: single mechanism for machine-to-machine auth. Only the hash
 -- is stored; the raw key is shown to the user exactly once at creation time.
 -- ---------------------------------------------------------------------------
@@ -75,6 +92,10 @@ CREATE TABLE api_key (
     name              VARCHAR(100) NOT NULL,
     key_prefix        VARCHAR(12)  NOT NULL, -- shown in UI for identification, e.g. 'mv_live_a1b2'
     key_hash          VARCHAR(255) NOT NULL, -- sha256/bcrypt hash
+    key_type            VARCHAR(10)  NOT NULL DEFAULT 'STANDARD'
+            CHECK (key_type IN ('SERVICE', 'STANDARD')),
+            -- SERVICE: sin humano detrás, JWT no requerido (sync, backup, health, webhooks)
+            -- STANDARD: 95% del sistema, la app SIEMPRE debe exigir JWT junto a esta key
     scopes            TEXT[]       NOT NULL DEFAULT '{}',
     created_by_user_id UUID        NOT NULL, -- external user_id (identity lives in the tenant's system)
     last_used_at      TIMESTAMPTZ,
@@ -104,33 +125,35 @@ CREATE TABLE platform_user (
 );
 
 -- ---------------------------------------------------------------------
--- tenant_member: NOT an identity table. A cache of external user_ids
--- seen for a tenant (populated the first time a JWT with that user_id
--- hits the API). Exists purely to (a) enforce the "max users" quota
--- and (b) show a human-readable member list without calling back into
--- the tenant's own system on every request.
+-- tenant_member: identidad canónica de usuarios finales dentro de MultiVault.
+-- `id` es el UUID interno usado en TODO el schema del tenant (document_
+-- permission.user_id, document.owner_user_id, etc). `subject` es el claim
+-- crudo del JWT externo — puede no ser UUID, por eso NO se usa directo.
+-- Se puebla/actualiza (upsert) la primera vez que llega un JWT válido con
+-- ese (tenant_id, subject).
 -- ---------------------------------------------------------------------
 CREATE TABLE tenant_member (
-    tenant_id         UUID NOT NULL REFERENCES tenant(id) ON DELETE CASCADE,
-    external_user_id  UUID NOT NULL,
-    display_name      VARCHAR(255),
-    email             VARCHAR(255),
-    first_seen_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
-    last_seen_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
-    PRIMARY KEY (tenant_id, external_user_id)
+    id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    tenant_id      UUID NOT NULL REFERENCES tenant(id) ON DELETE CASCADE,
+    subject        VARCHAR(255) NOT NULL, -- claim 'sub' del JWT del tenant
+    display_name   VARCHAR(255),
+    email          VARCHAR(255),
+    is_active      BOOLEAN NOT NULL DEFAULT true, -- permite desactivar sin borrar (preserva FKs históricas)
+    first_seen_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+    last_seen_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
+    CONSTRAINT uq_tenant_member_subject UNIQUE (tenant_id, subject)
 );
 
+CREATE INDEX idx_tenant_member_tenant ON tenant_member(tenant_id);
+
 -- ---------------------------------------------------------------------
--- tenant_usage: incremental quota counters. Updated by the app on
--- upload/delete/member-seen events — avoid SUM()/COUNT() over the
--- tenant's documents on every request.
+-- tenant_usage: contadores de cuota. user_count ahora se mantiene con
+-- trigger en vez de a criterio de la app.
 -- ---------------------------------------------------------------------
 CREATE TABLE tenant_usage (
     tenant_id            UUID PRIMARY KEY REFERENCES tenant(id) ON DELETE CASCADE,
-    storage_bytes_used   BIGINT      NOT NULL DEFAULT 0
-        CHECK (storage_bytes_used >= 0),
-    user_count           INTEGER     NOT NULL DEFAULT 0 -- denormalized from tenant_member
-        CHECK (user_count >= 0),
+    storage_bytes_used   BIGINT      NOT NULL DEFAULT 0 CHECK (storage_bytes_used >= 0),
+    user_count           INTEGER     NOT NULL DEFAULT 0 CHECK (user_count >= 0),
     updated_at           TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
@@ -142,6 +165,7 @@ CREATE TABLE audit_log (
     id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     tenant_id      UUID NOT NULL REFERENCES tenant(id) ON DELETE CASCADE,
     actor_user_id  UUID,             -- external user_id, platform_user.id, or NULL for system actions
+    api_key_id     UUID REFERENCES api_key(id), -- qué api_key originó la llamada (NULL para platform_user auth)
     actor_type     VARCHAR(20) NOT NULL DEFAULT 'TENANT_USER'
         CHECK (actor_type IN ('TENANT_USER', 'PLATFORM_STAFF', 'SYSTEM', 'API_KEY')),
     action         VARCHAR(100) NOT NULL, -- e.g. 'DOCUMENT_CREATED', 'TENANT_SUSPENDED'
@@ -155,7 +179,4 @@ CREATE TABLE audit_log (
 
 CREATE INDEX idx_audit_log_tenant_created ON audit_log(tenant_id, created_at DESC);
 CREATE INDEX idx_audit_log_resource ON audit_log(resource_type, resource_id);
-
--- Enforce WORM at the database level, not just by convention in code.
--- Replace `multivault_app` with your actual application role name.
--- REVOKE UPDATE, DELETE ON audit_log FROM multivault_app;
+CREATE INDEX idx_audit_log_api_key ON audit_log(api_key_id);

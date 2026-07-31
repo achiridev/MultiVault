@@ -18,7 +18,7 @@ CREATE TABLE folder (
     created_by        UUID NOT NULL, -- external user_id, no FK: identity lives outside this service
     created_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
-    deleted_at        TIMESTAMPTZ,
+    deleted_at        TIMESTAMPTZ
 );
 
 CREATE UNIQUE INDEX uq_folder_root_name
@@ -97,3 +97,20 @@ CREATE TABLE document_permission (
 );
 
 CREATE INDEX idx_document_permission_user ON document_permission(user_id);
+CREATE UNIQUE INDEX uq_document_single_owner
+    ON document_permission(document_id) WHERE permission_level = 'OWNER';
+
+-- Al crear el documento, se crea automáticamente su fila OWNER.
+-- Ya no depende de que la app recuerde hacer el INSERT extra.
+CREATE OR REPLACE FUNCTION fn_document_owner_permission() RETURNS TRIGGER AS $$
+BEGIN
+    INSERT INTO document_permission (document_id, user_id, permission_level, granted_by)
+    VALUES (NEW.id, NEW.owner_user_id, 'OWNER', NEW.owner_user_id)
+    ON CONFLICT (document_id, user_id) DO NOTHING;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER trg_document_owner_permission
+AFTER INSERT ON document
+FOR EACH ROW EXECUTE FUNCTION fn_document_owner_permission();
