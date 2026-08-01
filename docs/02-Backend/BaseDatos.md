@@ -39,10 +39,10 @@ Flyway está habilitado (`spring-boot-starter-flyway` + `flyway-database-postgre
 
 | Tabla | Columnas clave | Constraints |
 |---|---|---|
-| `folder` | id, name, parent_folder_id (self-ref), path, created_by, deleted_at | PK, FK(parent_folder), PARTIAL UNIQUE INDEX root name, PARTIAL UNIQUE INDEX parent+name |
-| `document` | id, folder_id, owner_user_id, current_version_id, status, deleted_at | PK, FK(folder), CHECK status IN(ACTIVE, ARCHIVED) |
-| `document_version` | id, document_id, version_number, name, storage_key, mime_type, size_bytes, checksum, metadata(JSONB), created_by_snapshot(JSONB) | PK, FK(document), UNIQUE(document_id, version_number) |
-| `document_permission` | id, document_id, user_id, permission_level, granted_by | PK, FK(document), UNIQUE(document_id, user_id), PARTIAL UNIQUE INDEX single owner |
+| `folder` | id, name, parent_folder_id (self-ref), path, created_by, created_at, updated_at, deleted_at | PK, FK(parent_folder), PARTIAL UNIQUE INDEX root name, PARTIAL UNIQUE INDEX parent+name |
+| `document` | id, folder_id, owner_user_id, current_version_id, status, created_at, updated_at, deleted_at | PK, FK(folder), CHECK status IN(ACTIVE, ARCHIVED) |
+| `document_version` | id, document_id, version_number, name, storage_key, mime_type, size_bytes, checksum, metadata(JSONB), created_by, created_by_snapshot(JSONB), created_at | PK, FK(document), UNIQUE(document_id, version_number) |
+| `document_permission` | id, document_id, user_id, permission_level, granted_by, granted_at | PK, FK(document), UNIQUE(document_id, user_id), PARTIAL UNIQUE INDEX single owner |
 
 #### FK Circular
 
