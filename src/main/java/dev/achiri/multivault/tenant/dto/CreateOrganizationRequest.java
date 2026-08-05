@@ -1,0 +1,55 @@
+package dev.achiri.multivault.tenant.dto;
+
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.Email;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Size;
+
+import java.util.List;
+import java.util.UUID;
+
+public record CreateOrganizationRequest(
+        @NotBlank
+        String name,
+
+        @NotNull
+        UUID planId,
+
+        @NotNull
+        @Valid
+        AdminDto admin,
+
+        @NotNull
+        @Valid
+        IdentityProviderDto identityProvider
+) {
+    public record AdminDto(
+            @NotBlank
+            String subject,
+
+            @NotBlank
+            @Email
+            String email,
+
+            @Size(max = 255)
+            String displayName
+    ) {
+    }
+
+    public record IdentityProviderDto(
+            @NotBlank
+            String issuer,
+
+            @NotBlank
+            String jwksUri,
+
+            @NotBlank
+            String audience,
+
+            List<String> allowedAlgorithms,
+
+            Integer clockSkewSeconds
+    ) {
+    }
+}
