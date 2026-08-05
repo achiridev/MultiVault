@@ -35,9 +35,9 @@ Controladores REST (Spring MVC) — NO IMPLEMENTADO
     ↓
 Servicios (Spring @Service) — NO IMPLEMENTADO
     ↓
-Repositorios (Spring Data JPA) — NO IMPLEMENTADO
+Repositorios (Spring Data JPA) — PARCIAL: dominio tenant (`TenantRepository`, `TenantIdentityProviderRepository`)
     ↓
-Entidades JPA — NO IMPLEMENTADO
+Entidades JPA — PARCIAL: dominio tenant (`Tenant`, `TenantIdentityProvider`)
     ↓
 PostgreSQL (público + esquemas por tenant)
 ```
@@ -62,8 +62,9 @@ dev.achiri.multivault
 ## Pendientes
 
 - [ ] Crear estructura de paquetes (`entity`, `repository`, `service`, `controller`, `config`, `security`, `dto`, `exception`)
-- [ ] Implementar capa de entidades JPA
-- [ ] Implementar capa de repositorios
+- [ ] Implementar capa de entidades JPA (completar resto de dominios)
+- [x] Implementar repositorios del dominio tenant
+- [ ] Implementar repositorios del resto de dominios
 - [ ] Implementar capa de servicios
 - [ ] Implementar capa de controladores REST
 - [ ] Configurar Spring Security
