@@ -6,7 +6,7 @@ Documentar la capa de servicios de la aplicación, sus responsabilidades y depen
 
 ## Estado actual
 
-No existe ninguna clase de servicio implementada en el código fuente.
+Implementado `TenantService.create` (creación transaccional de organización: tenant + subscription ACTIVE + identity provider + admin member). El resto se infiere de las entidades y la funcionalidad esperada.
 
 ## Información encontrada
 
@@ -16,7 +16,7 @@ El diseño de los servicios se infiere de las entidades y la funcionalidad esper
 
 | Servicio | Responsabilidades |
 |---|---|
-| `TenantService` | CRUD tenants, aprovisionamiento de schema, suspensión/cancelación |
+| `TenantService` ✅ | CRUD tenants, aprovisionamiento de schema, suspensión/cancelación — `create` implementado |
 | `SubscriptionService` | Gestión de suscripciones, cambio de plan, facturación |
 | `PlanService` | CRUD de planes (solo SUPER_ADMIN) |
 | `TenantIdentityProviderService` | CRUD de config OIDC por tenant |
@@ -43,7 +43,8 @@ El diseño de los servicios se infiere de las entidades y la funcionalidad esper
 
 ## Pendientes
 
-- [ ] Implementar servicios del schema público
+- [x] Implementar `TenantService.create` (organización)
+- [ ] Implementar resto de servicios del schema público
 - [ ] Implementar servicios del schema de tenant
 - [ ] Implementar servicio de almacenamiento S3/MinIO
 - [ ] Implementar validación de reglas de negocio

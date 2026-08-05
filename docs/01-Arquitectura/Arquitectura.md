@@ -31,13 +31,13 @@ La arquitectura está definida a nivel de esquema de base de datos y stack tecno
 ```
 Cliente HTTP
     ↓
-Controladores REST (Spring MVC) — NO IMPLEMENTADO
+Controladores REST (Spring MVC) — PARCIAL: `TenantController` (POST /api/v1/tenants)
     ↓
-Servicios (Spring @Service) — NO IMPLEMENTADO
+Servicios (Spring @Service) — PARCIAL: `TenantService` (creación transaccional de organización)
     ↓
-Repositorios (Spring Data JPA) — PARCIAL: dominio tenant (`TenantRepository`, `TenantIdentityProviderRepository`)
+Repositorios (Spring Data JPA) — PARCIAL: `TenantRepository`, `TenantIdentityProviderRepository`, `TenantMemberRepository`, `PlanRepository`, `SubscriptionRepository`
     ↓
-Entidades JPA — PARCIAL: dominio tenant (`Tenant`, `TenantIdentityProvider`)
+Entidades JPA — PARCIAL: `Tenant`, `TenantIdentityProvider`, `TenantMember`, `Plan`, `Subscription`
     ↓
 PostgreSQL (público + esquemas por tenant)
 ```
@@ -62,11 +62,14 @@ dev.achiri.multivault
 ## Pendientes
 
 - [ ] Crear estructura de paquetes (`entity`, `repository`, `service`, `controller`, `config`, `security`, `dto`, `exception`)
-- [ ] Implementar capa de entidades JPA (completar resto de dominios)
-- [x] Implementar repositorios del dominio tenant
+- [x] Implementar capa de entidades JPA del schema público (resto: `api_key`, `platform_user`, `tenant_usage`, `audit_log`)
+- [ ] Implementar capa de entidades JPA del schema por tenant
+- [x] Implementar repositorios de los dominios tenant/plan/subscription
 - [ ] Implementar repositorios del resto de dominios
-- [ ] Implementar capa de servicios
-- [ ] Implementar capa de controladores REST
+- [x] Implementar `TenantService` (creación de organización)
+- [ ] Implementar el resto de servicios
+- [x] Implementar `TenantController` (POST /api/v1/tenants)
+- [ ] Implementar el resto de controladores REST
 - [ ] Configurar Spring Security
 - [ ] Configurar Flyway
 - [ ] Configurar DataSource y JPA

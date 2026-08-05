@@ -6,7 +6,41 @@ Documentar los endpoints REST expuestos por el backend.
 
 ## Estado actual
 
-No existe ningún controlador REST implementado. Los endpoints aquí descritos se infieren del modelo de datos.
+Implementado: `POST /api/v1/tenants` (creación de organización). El resto de endpoints se infieren del modelo de datos. El proyecto incluye `spring-boot-starter-webmvc`, confirmando API REST sobre Servlet.
+
+### POST `/api/v1/tenants` — Crear organización (implementado)
+
+Crea de forma transaccional: `tenant`, `subscription` (ACTIVE), `tenant_identity_provider` y `tenant_member` (admin). `schema_name` se deriva de `name` (`mv_` + slug). Requiere `planId` existente y activo (`404` si no); `201 Created` en éxito. `audience` del identity provider es obligatorio (columna NOT NULL).
+
+Request:
+```json
+{
+  "name": "Acme Inc",
+  "planId": "a6d05cd9-9043-4a58-9015-7cf30831b0d8",
+  "admin": { "subject": "sub_123", "email": "admin@acme.com", "displayName": "Jane Doe" },
+  "identityProvider": {
+    "issuer": "https://idp.acme.com",
+    "jwksUri": "https://idp.acme.com/.well-known/jwks.json",
+    "audience": "https://api.acme.com",
+    "allowedAlgorithms": ["RS256"],
+    "clockSkewSeconds": 90
+  }
+}
+```
+
+`admin.displayName` opcional; `allowedAlgorithms` (default `RS256`) y `clockSkewSeconds` (default `60`) opcionales con override.
+
+Response `201 Created`:
+```json
+{
+  "tenant": { "id": "...", "name": "Acme Inc", "schemaName": "mv_acme_inc", "status": "PENDING_PROVISIONING" },
+  "subscription": { "id": "...", "planId": "...", "planCode": "PRO", "status": "ACTIVE" },
+  "admin": { "memberId": "...", "subject": "sub_123", "email": "admin@acme.com", "displayName": "Jane Doe" },
+  "identityProvider": { "issuer": "...", "jwksUri": "...", "audience": "...", "allowedAlgorithms": ["RS256"], "clockSkewSeconds": 90 }
+}
+```
+
+`status` queda `PENDING_PROVISIONING` hasta que se implemente el aprovisionamiento físico del schema por tenant.
 
 ## Información encontrada
 
@@ -63,8 +97,8 @@ Sin controladores REST en el código fuente. El proyecto incluye `spring-boot-st
 ## Pendientes
 
 - [ ] Definir convención de versionado de API (`/api/v1/...`)
-- [ ] Implementar controladores REST
-- [ ] Definir formato de respuesta estándar (envoltura, códigos de error)
+- [ ] Implementar el resto de controladores REST
+- [ ] Definir formato de respuesta estándar (envoltura, códigos de error) — POST /tenants ya usa estructura anidada por recurso
 - [ ] Documentar con OpenAPI/Swagger
 - [ ] Implementar validación de parámetros y cuerpos de request
 

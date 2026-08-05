@@ -6,7 +6,7 @@ Documentar las entidades JPA que mapean las tablas de la base de datos.
 
 ## Estado actual
 
-Existen las entidades `Tenant` y `TenantIdentityProvider` (schema público) y las clases base `BaseEntity`, `DateAudit` y `SoftDeletable` (auditoría). Este documento mapea cada tabla a su posible entidad basada en el schema SQL.
+Existen las entidades `Tenant`, `TenantIdentityProvider`, `TenantMember` (schema público), `Plan` y `Subscription`, y las clases base `BaseEntity`, `DateAudit` y `SoftDeletable` (auditoría). Este documento mapea cada tabla a su entidad basada en el schema SQL.
 
 ## Información encontrada
 
@@ -16,13 +16,13 @@ Existen las entidades `Tenant` y `TenantIdentityProvider` (schema público) y la
 
 | Tabla | Posible clase | Notas |
 |---|---|---|
-| `plan` | `Plan` | Catálogo de planes |
+| `plan` | `Plan` ✅ | Catálogo de planes, enum `PlanCode` |
 | `tenant` | `Tenant` ✅ | Core, schema_name validado, enum `TenantStatus` |
-| `subscription` | `Subscription` | Historial, un ACTIVE por tenant |
+| `subscription` | `Subscription` ✅ | Historial, un ACTIVE por tenant, enum `SubscriptionStatus` |
 | `tenant_identity_provider` | `TenantIdentityProvider` ✅ | OIDC config, PK = `tenant_id`, `List<String>` (TEXT[]) |
 | `api_key` | `ApiKey` | key_hash, key_prefix, key_type enum |
 | `platform_user` | `PlatformUser` | password_hash, role enum |
-| `tenant_member` | `TenantMember` | tenant_id + subject unique |
+| `tenant_member` | `TenantMember` ✅ | tenant_id + subject unique |
 | `tenant_usage` | `TenantUsage` | PK = tenant_id |
 | `audit_log` | `AuditLog` | WORM, metadata JSONB |
 
@@ -55,9 +55,14 @@ Existen las entidades `Tenant` y `TenantIdentityProvider` (schema público) y la
 
 | Entidad | Notas |
 |---|---|
+| `plan/model/Plan.java` | `extends DateAudit`. `code` como `PlanCode` (`@Enumerated(STRING)`, `length = 50`). `max_storage_bytes` como `Long`. |
 | `tenant/model/Tenant.java` | `extends DateAudit`. `status` como `TenantStatus` (`@Enumerated(STRING)`, `length = 30`). `current_plan_id` como `UUID` plano (denormalized cache, sin `@ManyToOne` a `Plan`). `length` explícito por columna por `ddl-auto: validate`. |
+| `subscription/model/Subscription.java` | `extends DateAudit`. `tenant_id`/`plan_id` como `UUID` plano (sin `@ManyToOne`, consistente con `Tenant.current_plan_id`). `status` como `SubscriptionStatus` (`length = 20`). `starts_at`/`ends_at`/`cancelled_at` como `Instant`. |
 | `tenant/model/TenantIdentityProvider.java` | PK = `tenant_id` (inline, sin `DateAudit`: no tiene columna `id`). Audit timestamps inline (`@CreatedDate`/`@LastModifiedDate` + `@EntityListeners`). `allowed_algorithms` como `List<String>` con `@JdbcTypeCode(SqlTypes.ARRAY)`. |
+| `tenant/model/TenantMember.java` | `extends BaseEntity` (no tiene `created_at`/`updated_at`; usa `first_seen_at`/`last_seen_at` con default `now()`). `tenant_id` + `subject` unique. |
 | `tenant/model/TenantStatus.java` | Enum: `PENDING_PROVISIONING`, `ACTIVE`, `SUSPENDED`, `CANCELLED` |
+| `plan/model/PlanCode.java` | Enum: `FREE`, `PRO`, `ENTERPRISE` |
+| `subscription/model/SubscriptionStatus.java` | Enum: `ACTIVE`, `CANCELLED`, `PAST_DUE`, `TRIALING` |
 
 ### Clases base y auditoría
 
@@ -96,10 +101,11 @@ public class Plan {
 
 ## Pendientes
 
-- [ ] Crear el resto de entidades JPA para el schema público (`plan`, `subscription`, `api_key`, `platform_user`, `tenant_member`, `tenant_usage`, `audit_log`)
+- [ ] Crear el resto de entidades JPA para el schema público (`api_key`, `platform_user`, `tenant_usage`, `audit_log`)
 - [ ] Crear todas las entidades JPA para el schema por tenant
 - [x] Definir enum: `TenantStatus`
-- [ ] Definir enums: `PlanCode`, `SubscriptionStatus`, `ApiKeyType`, `PlatformUserRole`, `ActorType`, `DocumentStatus`, `PermissionLevel`
+- [x] Definir enums: `PlanCode`, `SubscriptionStatus`
+- [ ] Definir enums: `ApiKeyType`, `PlatformUserRole`, `ActorType`, `DocumentStatus`, `PermissionLevel`
 - [ ] Definir converters para: `JsonNode` (JSONB), `Inet` (INET) — `List<String>` (TEXT[]) ya resuelto con `@JdbcTypeCode(SqlTypes.ARRAY)`
 - [ ] Definir relaciones JPA (`@OneToMany`, `@ManyToOne`, `@OneToOne`)
 - [x] Definir `@EntityListeners` para `created_at` / `updated_at` automáticos (`DateAudit`)
