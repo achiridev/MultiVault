@@ -6,7 +6,7 @@ Documentar las entidades JPA que mapean las tablas de la base de datos.
 
 ## Estado actual
 
-No existe ninguna entidad JPA concreta en el código fuente. Existen las clases base `BaseEntity`, `DateAudit` y `SoftDeletable` (auditoría). Este documento mapea cada tabla a su posible entidad basada en el schema SQL.
+Existen las entidades `Tenant` y `TenantIdentityProvider` (schema público) y las clases base `BaseEntity`, `DateAudit` y `SoftDeletable` (auditoría). Este documento mapea cada tabla a su posible entidad basada en el schema SQL.
 
 ## Información encontrada
 
@@ -17,9 +17,9 @@ No existe ninguna entidad JPA concreta en el código fuente. Existen las clases 
 | Tabla | Posible clase | Notas |
 |---|---|---|
 | `plan` | `Plan` | Catálogo de planes |
-| `tenant` | `Tenant` | Core, schema_name validado |
+| `tenant` | `Tenant` ✅ | Core, schema_name validado, enum `TenantStatus` |
 | `subscription` | `Subscription` | Historial, un ACTIVE por tenant |
-| `tenant_identity_provider` | `TenantIdentityProvider` | OIDC config, PK = tenant_id |
+| `tenant_identity_provider` | `TenantIdentityProvider` ✅ | OIDC config, PK = `tenant_id`, `List<String>` (TEXT[]) |
 | `api_key` | `ApiKey` | key_hash, key_prefix, key_type enum |
 | `platform_user` | `PlatformUser` | password_hash, role enum |
 | `tenant_member` | `TenantMember` | tenant_id + subject unique |
@@ -44,11 +44,20 @@ No existe ninguna entidad JPA concreta en el código fuente. Existen las clases 
 | IDs | `java.util.UUID` con `@GeneratedValue(strategy = GenerationType.UUID)` |
 | Timestamps | `OffsetDateTime` o `Instant` para `TIMESTAMPTZ` |
 | JSONB | `com.fasterxml.jackson.databind.JsonNode` |
-| Arrays (TEXT[]) | `List<String>` con converter |
+| Arrays (TEXT[]) | `List<String>` con `@JdbcTypeCode(SqlTypes.ARRAY)` + `@Array(length)` — el `AttributeConverter` **no aplica** (Hibernate 7 lo trata como basic type y falla en `BasicPluralType`) |
 | Enums | Java `enum` con `@Enumerated(EnumType.STRING)` |
 | Soft deletes | campo `deletedAt`; queries siempre con `WHERE deleted_at IS NULL` |
 | Versiones de documentos | nunca UPDATE; solo INSERT y repunte de FK en `current_version_id` |
 | Auditoría | entidades con `created_at`/`updated_at` → `DateAudit`; con `deleted_at` → `SoftDeletable` |
+| Organización | package por feature con sub-paquetes: entidades en `<feature>/model/` (p.ej. `tenant/model/`) |
+
+### Entidades del schema público
+
+| Entidad | Notas |
+|---|---|
+| `tenant/model/Tenant.java` | `extends DateAudit`. `status` como `TenantStatus` (`@Enumerated(STRING)`, `length = 30`). `current_plan_id` como `UUID` plano (denormalized cache, sin `@ManyToOne` a `Plan`). `length` explícito por columna por `ddl-auto: validate`. |
+| `tenant/model/TenantIdentityProvider.java` | PK = `tenant_id` (inline, sin `DateAudit`: no tiene columna `id`). Audit timestamps inline (`@CreatedDate`/`@LastModifiedDate` + `@EntityListeners`). `allowed_algorithms` como `List<String>` con `@JdbcTypeCode(SqlTypes.ARRAY)`. |
+| `tenant/model/TenantStatus.java` | Enum: `PENDING_PROVISIONING`, `ACTIVE`, `SUSPENDED`, `CANCELLED` |
 
 ### Clases base y auditoría
 
@@ -87,10 +96,11 @@ public class Plan {
 
 ## Pendientes
 
-- [ ] Crear todas las entidades JPA para el schema público
+- [ ] Crear el resto de entidades JPA para el schema público (`plan`, `subscription`, `api_key`, `platform_user`, `tenant_member`, `tenant_usage`, `audit_log`)
 - [ ] Crear todas las entidades JPA para el schema por tenant
-- [ ] Definir enums: `PlanCode`, `TenantStatus`, `SubscriptionStatus`, `ApiKeyType`, `PlatformUserRole`, `ActorType`, `DocumentStatus`, `PermissionLevel`
-- [ ] Definir converters para: `List<String>` (TEXT[]), `JsonNode` (JSONB), `Inet` (INET)
+- [x] Definir enum: `TenantStatus`
+- [ ] Definir enums: `PlanCode`, `SubscriptionStatus`, `ApiKeyType`, `PlatformUserRole`, `ActorType`, `DocumentStatus`, `PermissionLevel`
+- [ ] Definir converters para: `JsonNode` (JSONB), `Inet` (INET) — `List<String>` (TEXT[]) ya resuelto con `@JdbcTypeCode(SqlTypes.ARRAY)`
 - [ ] Definir relaciones JPA (`@OneToMany`, `@ManyToOne`, `@OneToOne`)
 - [x] Definir `@EntityListeners` para `created_at` / `updated_at` automáticos (`DateAudit`)
 
