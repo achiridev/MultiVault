@@ -35,6 +35,8 @@ Controladores REST (Spring MVC) — PARCIAL: `TenantController` (POST /api/v1/te
     ↓
 Servicios (Spring @Service) — PARCIAL: `TenantService` (creación transaccional de organización)
     ↓
+Mappers (MapStruct, generados en compile) — `tenant/mapper/`, `subscription/mapper/`
+    ↓
 Repositorios (Spring Data JPA) — PARCIAL: `TenantRepository`, `TenantIdentityProviderRepository`, `TenantMemberRepository`, `PlanRepository`, `SubscriptionRepository`
     ↓
 Entidades JPA — PARCIAL: `Tenant`, `TenantIdentityProvider`, `TenantMember`, `Plan`, `Subscription`
@@ -70,6 +72,7 @@ dev.achiri.multivault
 - [ ] Implementar el resto de servicios
 - [x] Implementar `TenantController` (POST /api/v1/tenants)
 - [ ] Implementar el resto de controladores REST
+- [x] Configurar MapStruct (ADR-0002) — mappers de `tenant` y `subscription`
 - [ ] Configurar Spring Security
 - [ ] Configurar Flyway
 - [ ] Configurar DataSource y JPA

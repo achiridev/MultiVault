@@ -6,7 +6,7 @@ Documentar la capa de servicios de la aplicación, sus responsabilidades y depen
 
 ## Estado actual
 
-Implementado `TenantService.create` (creación transaccional de organización: tenant + subscription ACTIVE + identity provider + admin member). El resto se infiere de las entidades y la funcionalidad esperada.
+Implementado `TenantService.create` (creación transaccional de organización: tenant + subscription ACTIVE + identity provider + admin member). El mapeo DTO ↔ Entidad lo generan mappers MapStruct (`tenant/mapper/`, `subscription/mapper/`) según ADR-0002; el servicio solo orquesta (deriva `schema_name`, asigna FKs) y valida el plan. El resto se infiere de las entidades y la funcionalidad esperada.
 
 ## Información encontrada
 

@@ -51,6 +51,7 @@ Punto de entrada único. Lee este archivo primero, luego los documentos relevant
 ## 06-Decisiones
 
 | [ADR-0001](06-Decisiones/ADR-0001.md) | Schema-per-tenant |
+| [ADR-0002](06-Decisiones/ADR-0002.md) | MapStruct para mapeo DTO ↔ Entidad |
 
 ## 99-Templates
 
