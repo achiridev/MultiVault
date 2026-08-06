@@ -25,6 +25,10 @@ Existen controles de seguridad a nivel de base de datos (constraints, checks, í
 
 El `audit_log` está diseñado como insert-only. La nota en el schema indica que se deben aplicar `REVOKE` a nivel de base de datos para prevenir UPDATE/DELETE por el rol de la aplicación.
 
+### Auditoría de eventos
+
+El paquete `dev.achiri.multivault.audit` implementa la auditoría con eventos de aplicación (ver ADR-0003): los servicios publican `AuditEvent` vía `AuditEventPublisher` y el listener persiste en `audit_log` solo cuando la transacción de negocio commiteó (`AFTER_COMMIT` + `REQUIRES_NEW`). El log queda así desacoplado del negocio y no revierte operaciones por fallos de auditoría.
+
 ### Soft deletes
 
 - `folder.deleted_at` — borrado lógico de carpetas (no purge programado)
@@ -45,7 +49,7 @@ El `audit_log` está diseñado como insert-only. La nota en el schema indica que
 - [ ] Implementar validación de scopes de API keys
 - [ ] Implementar rate limiting por tenant y por API key
 - [ ] Aplicar REVOKE a nivel de base de datos para `audit_log`
-- [ ] Implementar auditoría de eventos de seguridad (logins fallidos, keys revocadas)
+- [x] Implementar infraestructura de auditoría de eventos (paquete `audit/` + ADR-0003) — falta cubrir eventos específicos de seguridad (logins fallidos, keys revocadas)
 - [ ] Definir política de contraseñas para platform_user
 - [ ] Configurar HTTPS/TLS
 - [ ] Implementar protección contra ataques comunes (XSS, CSRF, SQL injection, etc.)
