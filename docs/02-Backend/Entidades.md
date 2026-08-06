@@ -61,7 +61,7 @@ Existen las entidades `Tenant`, `TenantIdentityProvider`, `TenantMember` (schema
 | `tenant/model/TenantIdentityProvider.java` | PK = `tenant_id` (inline, sin `DateAudit`: no tiene columna `id`). Audit timestamps inline (`@CreatedDate`/`@LastModifiedDate` + `@EntityListeners`). `allowed_algorithms` como `List<String>` con `@JdbcTypeCode(SqlTypes.ARRAY)`. |
 | `tenant/model/TenantMember.java` | `extends BaseEntity` (no tiene `created_at`/`updated_at`; usa `first_seen_at`/`last_seen_at` con default `now()`). `tenant_id` + `subject` unique. |
 | `tenant/model/TenantStatus.java` | Enum: `PENDING_PROVISIONING`, `ACTIVE`, `SUSPENDED`, `CANCELLED` |
-| `plan/model/PlanCode.java` | Enum: `FREE`, `PRO`, `ENTERPRISE` |
+| `plan/model/PlanCode.java` | Enum: `FREE`, `PRO`, `BUSINESS`, `ENTERPRISE` |
 | `subscription/model/SubscriptionStatus.java` | Enum: `ACTIVE`, `CANCELLED`, `PAST_DUE`, `TRIALING` |
 
 ### Clases base y auditoría

@@ -25,7 +25,7 @@ Flyway está habilitado (`spring-boot-starter-flyway` + `flyway-database-postgre
 
 | Tabla | Columnas clave | Constraints |
 |---|---|---|
-| `plan` | id, code (FREE/PRO/ENTERPRISE), name, price_cents, max_storage_bytes, max_users, max_requests_per_minute, is_active | PK, UNIQUE(code), CHECK(price_cents >= 0), CHECK(max_storage_bytes >= 0) |
+| `plan` | id, code (FREE/PRO/BUSINESS/ENTERPRISE), name, price_cents, max_storage_bytes, max_users, max_requests_per_minute, is_active | PK, UNIQUE(code), CHECK(price_cents >= 0), CHECK(max_storage_bytes >= 0) |
 | `tenant` | id, name, schema_name, status, current_plan_id, suspended_at, suspended_reason | PK, UNIQUE(schema_name), CHECK regex schema_name, CHECK status IN(...) |
 | `subscription` | id, tenant_id, plan_id, status, starts_at, ends_at, cancelled_at | PK, FK(tenant), FK(plan), PARTIAL UNIQUE INDEX one active |
 | `tenant_identity_provider` | tenant_id, issuer, jwks_uri, audience, allowed_algorithms, clock_skew_seconds | PK(FK tenant), CHECK no 'none' algorithm |
