@@ -20,7 +20,6 @@ public record CreateOrganizationRequest(
         @Valid
         AdminDto admin,
 
-        @NotNull
         @Valid
         IdentityProviderDto identityProvider
 ) {
