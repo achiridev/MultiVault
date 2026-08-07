@@ -39,11 +39,13 @@ El diseño de los servicios se infiere de las entidades y la funcionalidad esper
 - No se permite crear carpetas con el mismo nombre en la misma raíz/parent
 - El path materializado se actualiza al mover carpetas
 - Al crear un documento, se inserta automáticamente el permiso OWNER (via trigger DB)
+- `max_users` limita los miembros activos por tenant (`tenant_member`); no aplica a `platform_user` ni `api_key`. **Enforcement pendiente**: no existe trigger en `tenant_usage.user_count` ni validación en app (ver BaseDatos)
 - Los audit_log son insert-only
 
 ## Pendientes
 
 - [x] Implementar `TenantService.create` (organización)
+- [ ] Implementar enforcement de `max_users` (trigger `tenant_usage.user_count` o validación en app)
 - [ ] Implementar resto de servicios del schema público
 - [ ] Implementar servicios del schema de tenant
 - [ ] Implementar servicio de almacenamiento S3/MinIO

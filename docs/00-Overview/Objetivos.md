@@ -18,7 +18,7 @@ No existen objetivos formalmente documentados. Los objetivos aquí descritos se 
 - **Autenticación federada:** Soportar OIDC/JWT por tenant para que cada cliente use su propio Identity Provider
 - **Autenticación M2M:** Proveer API keys para integraciones machine-to-machine (SERVICE y STANDARD)
 - **Auditoría WORM:** Registrar todas las operaciones en un log de auditoría inmutable (write-once-read-many)
-- **Facturación por plan:** Soportar planes FREE, PRO, ENTERPRISE con límites de almacenamiento, usuarios y requests
+- **Facturación por plan:** Soportar planes FREE, PRO, BUSINESS, ENTERPRISE con límites de almacenamiento, usuarios y requests
 
 ### Objetivos técnicos (inferidos del stack)
 
