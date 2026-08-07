@@ -6,7 +6,7 @@ Documentar la capa de servicios de la aplicación, sus responsabilidades y depen
 
 ## Estado actual
 
-Implementado `TenantService.create` (creación transaccional de organización: tenant + subscription ACTIVE + identity provider + admin member). El mapeo DTO ↔ Entidad lo generan mappers MapStruct (`tenant/mapper/`, `subscription/mapper/`) según ADR-0002; el servicio solo orquesta (deriva `schema_name`, asigna FKs) y valida el plan. El resto se infiere de las entidades y la funcionalidad esperada.
+`TenantService.create` (orquestador, no transaccional) coordina el aprovisionamiento de organización en tres etapas (ADR-0004): `TenantProvisioningService.initialize` (TX 1: `tenant` PENDING_PROVISIONING + `subscription` ACTIVE + `tenant_usage` + `tenant_member` + `identity_provider` opcional), `TenantSchemaProvisioner.provision` (CREATE SCHEMA + Flyway por tenant, fuera de transacción) y `TenantProvisioningService.activate` (TX 2: tenant ACTIVE + `current_plan_id`, API key inicial del admin vía `ApiKeyService.createInitial`, auditoría `TENANT_CREATED`). El mapeo DTO ↔ Entidad lo generan mappers MapStruct (`tenant/mapper/`, `subscription/mapper/`) según ADR-0002. `ApiKeyService` genera la key raw (`mv_live_` + 40 hex), persiste solo su hash SHA-256 y la devuelve una única vez.
 
 ## Información encontrada
 
@@ -16,11 +16,13 @@ El diseño de los servicios se infiere de las entidades y la funcionalidad esper
 
 | Servicio | Responsabilidades |
 |---|---|
-| `TenantService` ✅ | CRUD tenants, aprovisionamiento de schema, suspensión/cancelación — `create` implementado |
+| `TenantService` ✅ | CRUD tenants, orquesta aprovisionamiento — `create` implementado (no transaccional) |
+| `TenantProvisioningService` ✅ | TX de onboarding: `initialize`, `markProvisioningFailed`, `activate` |
+| `TenantSchemaProvisioner` ✅ | CREATE SCHEMA + Flyway por tenant (`infrastructure/persistence/tenant`) |
+| `ApiKeyService` ✅ | Creación de API keys (generación raw + hash SHA-256); revocación/validación pendientes |
 | `SubscriptionService` | Gestión de suscripciones, cambio de plan, facturación |
 | `PlanService` | CRUD de planes (solo SUPER_ADMIN) |
 | `TenantIdentityProviderService` | CRUD de config OIDC por tenant |
-| `ApiKeyService` | Creación, revocación, validación de API keys |
 | `PlatformUserService` | CRUD de staff, login, cambio de contraseña |
 | `TenantMemberService` | Upsert de miembros desde JWT, activación/desactivación |
 | `FolderService` | CRUD carpetas, mover, path materializado |
@@ -44,17 +46,17 @@ El diseño de los servicios se infiere de las entidades y la funcionalidad esper
 
 ## Pendientes
 
-- [x] Implementar `TenantService.create` (organización)
+- [x] Implementar `TenantService.create` (organización + aprovisionamiento de schema + API key inicial)
 - [ ] Implementar enforcement de `max_users` (trigger `tenant_usage.user_count` o validación en app)
 - [ ] Implementar resto de servicios del schema público
 - [ ] Implementar servicios del schema de tenant
 - [ ] Implementar servicio de almacenamiento S3/MinIO
 - [ ] Implementar validación de reglas de negocio
 - [ ] Implementar manejo de excepciones y mensajes de error
-- [ ] Definir transaccionalidad (@Transactional)
+- [x] Definir transaccionalidad (@Transactional): etapas de onboarding (ADR-0004)
 
 ## Preguntas abiertas
 
-- ¿Se usará @Transactional a nivel de servicio o de repositorio?
 - ¿Los servicios expondrán interfaces o serán clases directas?
 - ¿Cómo se propagan las excepciones entre capas?
+- ¿Cómo se reintenta un tenant con aprovisionamiento fallido (retry manual o automático)?

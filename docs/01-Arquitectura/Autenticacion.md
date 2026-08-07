@@ -56,6 +56,7 @@ CREATE TABLE api_key (
 - **STANDARD:** Uso normal, la app SIEMPRE debe exigir JWT junto a esta key
 - Solo se almacena el hash; la key raw se muestra una única vez al crearla
 - Índice único parcial sobre `key_hash WHERE revoked_at IS NULL`
+- Al crear un tenant, el onboarding genera automáticamente la **API key inicial del admin** (`ApiKeyService.createInitial`): raw `mv_live_` + 40 hex, `key_prefix` = primeros 12 chars, hash SHA-256, `key_type = STANDARD`, `created_by_user_id = tenant_member.id` del admin. La raw se devuelve una sola vez en la respuesta de `POST /api/v1/tenants`
 
 ### Mecanismo 3: Platform User (platform_user)
 
@@ -104,6 +105,7 @@ CREATE TABLE tenant_member (
 - [ ] Implementar `TenantMemberService` para upsert de miembros
 - [ ] Agregar endpoint de login para platform_user
 - [ ] Agregar endpoint de refresh de API keys
+- [x] Implementar creación de API keys (key inicial del admin en onboarding); rotación/validación pendientes
 
 ## Preguntas abiertas
 

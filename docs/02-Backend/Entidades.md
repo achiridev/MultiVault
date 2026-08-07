@@ -20,10 +20,10 @@ Existen las entidades `Tenant`, `TenantIdentityProvider`, `TenantMember`, `Audit
 | `tenant` | `Tenant` ✅ | Core, schema_name validado, enum `TenantStatus` |
 | `subscription` | `Subscription` ✅ | Historial, un ACTIVE por tenant, enum `SubscriptionStatus` |
 | `tenant_identity_provider` | `TenantIdentityProvider` ✅ | OIDC config, PK = `tenant_id`, `List<String>` (TEXT[]) |
-| `api_key` | `ApiKey` | key_hash, key_prefix, key_type enum |
+| `api_key` | `ApiKey` ✅ | key_hash, key_prefix, key_type enum `ApiKeyType` |
 | `platform_user` | `PlatformUser` | password_hash, role enum |
 | `tenant_member` | `TenantMember` ✅ | tenant_id + subject unique |
-| `tenant_usage` | `TenantUsage` | PK = tenant_id |
+| `tenant_usage` | `TenantUsage` ✅ | PK = tenant_id |
 | `audit_log` | `AuditLog` ✅ | WORM, metadata JSONB, `created_at` sin `updated_at` |
 
 #### Schema por tenant
@@ -61,10 +61,14 @@ Existen las entidades `Tenant`, `TenantIdentityProvider`, `TenantMember`, `Audit
 | `tenant/model/TenantIdentityProvider.java` | PK = `tenant_id` (inline, sin `DateAudit`: no tiene columna `id`). Audit timestamps inline (`@CreatedDate`/`@LastModifiedDate` + `@EntityListeners`). `allowed_algorithms` como `List<String>` con `@JdbcTypeCode(SqlTypes.ARRAY)`. |
 | `tenant/model/TenantMember.java` | `extends BaseEntity` (no tiene `created_at`/`updated_at`; usa `first_seen_at`/`last_seen_at` con default `now()`). `tenant_id` + `subject` unique. |
 | `audit/model/AuditLog.java` | `extends BaseEntity` (WORM: no tiene `updated_at`). `created_at` con `@CreatedDate` + `@EntityListeners`. `actor_type` como `ActorType` (`length = 20`). `metadata` JSONB → `tools.jackson.databind.JsonNode` con `@JdbcTypeCode(SqlTypes.JSON)` (Jackson 3 en Boot 4). `ip_address` INET → `java.net.InetAddress` con `@JdbcTypeCode(SqlTypes.INET)` (soporte nativo Hibernate 7). `tenant_id`/`actor_user_id`/`api_key_id`/`resource_id` como `UUID` plano. |
+| `audit/model/AuditLog.java` | `extends BaseEntity` (WORM: no tiene `updated_at`). `created_at` con `@CreatedDate` + `@EntityListeners`. `actor_type` como `ActorType` (`length = 20`). `metadata` JSONB → `tools.jackson.databind.JsonNode` con `@JdbcTypeCode(SqlTypes.JSON)` (Jackson 3 en Boot 4). `ip_address` INET → `java.net.InetAddress` con `@JdbcTypeCode(SqlTypes.INET)` (soporte nativo Hibernate 7). `tenant_id`/`actor_user_id`/`api_key_id`/`resource_id` como `UUID` plano. |
+| `apikey/model/ApiKey.java` | `extends BaseEntity` (solo `created_at`, sin `updated_at`). `key_type` como `ApiKeyType` (`length = 10`). `scopes` como `List<String>` con `@JdbcTypeCode(SqlTypes.ARRAY)` + `@Array`. Solo se persiste `key_hash` (SHA-256 hex); la key raw nunca se guarda. |
+| `tenant/model/TenantUsage.java` | PK = `tenant_id` (inline, no extiende `BaseEntity`). `storage_bytes_used`/`user_count` con defaults 0. `updated_at` con `@LastModifiedDate` (la tabla no tiene `created_at`). |
 | `tenant/model/TenantStatus.java` | Enum: `PENDING_PROVISIONING`, `ACTIVE`, `SUSPENDED`, `CANCELLED` |
 | `plan/model/PlanCode.java` | Enum: `FREE`, `PRO`, `BUSINESS`, `ENTERPRISE` |
 | `subscription/model/SubscriptionStatus.java` | Enum: `ACTIVE`, `CANCELLED`, `PAST_DUE`, `TRIALING` |
 | `audit/model/ActorType.java` | Enum: `TENANT_USER`, `PLATFORM_STAFF`, `SYSTEM`, `API_KEY` |
+| `apikey/model/ApiKeyType.java` | Enum: `SERVICE`, `STANDARD` |
 
 ### Clases base y auditoría
 
@@ -103,12 +107,12 @@ public class Plan {
 
 ## Pendientes
 
-- [ ] Crear el resto de entidades JPA para el schema público (`api_key`, `platform_user`, `tenant_usage`)
+- [ ] Crear el resto de entidades JPA para el schema público (`platform_user`)
 - [ ] Crear todas las entidades JPA para el schema por tenant
 - [x] Definir enum: `TenantStatus`
 - [x] Definir enums: `PlanCode`, `SubscriptionStatus`
 - [x] Definir enum: `ActorType`
-- [ ] Definir enums: `ApiKeyType`, `PlatformUserRole`, `DocumentStatus`, `PermissionLevel`
+- [x] Definir enums: `ApiKeyType`; pendientes `PlatformUserRole`, `DocumentStatus`, `PermissionLevel`
 - [x] Definir converters para: `JsonNode` (JSONB) vía `@JdbcTypeCode(SqlTypes.JSON)`, `Inet` (INET) vía `InetAddress` + `@JdbcTypeCode(SqlTypes.INET)` — `List<String>` (TEXT[]) ya resuelto con `@JdbcTypeCode(SqlTypes.ARRAY)`
 - [ ] Definir relaciones JPA (`@OneToMany`, `@ManyToOne`, `@OneToOne`)
 - [x] Definir `@EntityListeners` para `created_at` / `updated_at` automáticos (`DateAudit`)

@@ -8,9 +8,9 @@ Documentar la estructura completa de la base de datos, migraciones, convenciones
 
 La base de datos está completamente modelada a nivel SQL con dos archivos:
 1. `db/migration/V1__public_schema.sql` — Schema público (181 líneas, 9 tablas)
-2. `db/tenant_schema.sql` — Schema por tenant (116 líneas, 4 tablas + trigger + FK circular)
+2. `db/tenant/V1__tenant_schema.sql` — Schema por tenant (116 líneas, 4 tablas + trigger + FK circular)
 
-Flyway está habilitado (`spring-boot-starter-flyway` + `flyway-database-postgresql`) y ejecuta las migraciones de `classpath:db/migration` al arrancar contra el DataSource de `DB_URL`. Las migraciones ya aplicadas se registran en la tabla `flyway_schema_history`.
+Flyway está habilitado (`spring-boot-starter-flyway` + `flyway-database-postgresql`) y ejecuta las migraciones de `classpath:db/migration` al arrancar contra el DataSource de `DB_URL`. Las migraciones ya aplicadas se registran en la tabla `flyway_schema_history`. El template por tenant (`classpath:db/tenant`) NO lo ejecuta el Flyway principal: se aplica por schema con una instancia Flyway programática al aprovisionar cada tenant (ADR-0004).
 
 ### Setup local (perfil `local`)
 
@@ -35,7 +35,7 @@ Flyway está habilitado (`spring-boot-starter-flyway` + `flyway-database-postgre
 | `tenant_usage` | tenant_id, storage_bytes_used, user_count | PK(FK tenant), CHECK(storage >= 0) |
 | `audit_log` | id, tenant_id, actor_user_id, actor_type, action, resource_type, resource_id, ip_address, user_agent, metadata(JSONB) | PK, FK(tenant), CHECK actor_type IN(...), indexes on (tenant_id, created_at) y (resource_type, resource_id) |
 
-### Schema por tenant (`tenant_schema.sql`)
+### Schema por tenant (`db/tenant/V1__tenant_schema.sql`)
 
 | Tabla | Columnas clave | Constraints |
 |---|---|---|
@@ -73,13 +73,13 @@ FOR EACH ROW EXECUTE FUNCTION fn_document_owner_permission();
 
 - **No modificar** migraciones ya aplicadas (`V1__public_schema.sql`)
 - Nuevos cambios = nueva migración (`V2__descripcion.sql`, `V3__descripcion.sql`, etc.)
-- El `tenant_schema.sql` se aplica por separado a cada schema de tenant (no es una migración Flyway estándar)
+- El `db/tenant/V1__tenant_schema.sql` se aplica por schema con una instancia Flyway programática al aprovisionar cada tenant; cada schema conserva su propio `flyway_schema_history` (ADR-0004)
 - No duplicar en la aplicación lógica que ya existe en la base de datos (ej. trigger de owner permission)
 - Si se necesita una nueva dependencia, verificar que no exista ya en `pom.xml` y documentar por qué es necesaria
 
 ## Pendientes
 
-- [ ] Implementar estrategia de migraciones para schemas de tenant
+- [x] Implementar estrategia de migraciones para schemas de tenant — ADR-0004 (`db/tenant/V1__tenant_schema.sql`)
 
 ## Preguntas abiertas
 
