@@ -1,5 +1,8 @@
 package dev.achiri.multivault.tenant.service;
 
+import dev.achiri.multivault.audit.event.AuditEvent;
+import dev.achiri.multivault.audit.event.AuditEventPublisher;
+import dev.achiri.multivault.audit.model.ActorType;
 import dev.achiri.multivault.common.exception.RecursoNoEncontradoException;
 import dev.achiri.multivault.common.util.SlugUtils;
 import dev.achiri.multivault.plan.model.Plan;
@@ -22,6 +25,8 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.Map;
+
 @Service
 @RequiredArgsConstructor
 public class TenantService {
@@ -36,6 +41,7 @@ public class TenantService {
     private final SubscriptionMapper subscriptionMapper;
     private final TenantIdentityProviderMapper tenantIdentityProviderMapper;
     private final TenantMemberMapper tenantMemberMapper;
+    private final AuditEventPublisher auditEventPublisher;
 
     @Transactional
     public CreateOrganizationResponse create(CreateOrganizationRequest request) {
@@ -58,6 +64,15 @@ public class TenantService {
         TenantMember admin = tenantMemberMapper.toEntity(request.admin());
         admin.setTenantId(tenant.getId());
         tenantMemberRepository.save(admin);
+
+        auditEventPublisher.publish(AuditEvent.builder()
+                .tenantId(tenant.getId())
+                .actorType(ActorType.SYSTEM)
+                .action("TENANT_CREATED")
+                .resourceType("tenant")
+                .resourceId(tenant.getId())
+                .metadata(Map.of("plan", plan.getCode().name()))
+                .build());
 
         return new CreateOrganizationResponse(
                 tenantMapper.toDto(tenant),
