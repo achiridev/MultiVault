@@ -1,7 +1,7 @@
 package dev.achiri.multivault.tenant.controller;
 
-import dev.achiri.multivault.tenant.dto.CreateOrganizationRequest;
-import dev.achiri.multivault.tenant.dto.CreateOrganizationResponse;
+import dev.achiri.multivault.tenant.dto.CreateTenantRequest;
+import dev.achiri.multivault.tenant.dto.CreateTenantResponse;
 import dev.achiri.multivault.tenant.service.TenantService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -19,7 +19,7 @@ public class TenantController {
     private final TenantService tenantService;
 
     @PostMapping
-    public ResponseEntity<CreateOrganizationResponse> create(@Valid @RequestBody CreateOrganizationRequest request) {
+    public ResponseEntity<CreateTenantResponse> create(@Valid @RequestBody CreateTenantRequest request) {
         return ResponseEntity
                 .status(HttpStatus.CREATED)
                 .body(tenantService.create(request));

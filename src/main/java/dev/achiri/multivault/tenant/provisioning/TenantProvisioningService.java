@@ -1,4 +1,4 @@
-package dev.achiri.multivault.tenant.service;
+package dev.achiri.multivault.tenant.provisioning;
 
 import dev.achiri.multivault.apikey.service.ApiKeyResult;
 import dev.achiri.multivault.apikey.service.ApiKeyService;
@@ -10,7 +10,7 @@ import dev.achiri.multivault.plan.model.Plan;
 import dev.achiri.multivault.subscription.mapper.SubscriptionMapper;
 import dev.achiri.multivault.subscription.model.Subscription;
 import dev.achiri.multivault.subscription.repository.SubscriptionRepository;
-import dev.achiri.multivault.tenant.dto.CreateOrganizationRequest;
+import dev.achiri.multivault.tenant.dto.CreateTenantRequest;
 import dev.achiri.multivault.tenant.mapper.TenantIdentityProviderMapper;
 import dev.achiri.multivault.tenant.mapper.TenantMapper;
 import dev.achiri.multivault.tenant.mapper.TenantMemberMapper;
@@ -50,7 +50,7 @@ public class TenantProvisioningService {
     private final AuditEventPublisher auditEventPublisher;
 
     @Transactional
-    public OnboardingResult initialize(CreateOrganizationRequest request, Plan plan, String schemaName) {
+    public OnboardingResult initialize(CreateTenantRequest request, Plan plan, String schemaName) {
         Tenant tenant = tenantMapper.toEntity(request);
         tenant.setSchemaName(schemaName);
         tenantRepository.save(tenant);

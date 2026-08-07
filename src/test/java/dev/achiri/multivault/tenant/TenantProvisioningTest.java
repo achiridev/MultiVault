@@ -6,8 +6,8 @@ import dev.achiri.multivault.audit.repository.AuditLogRepository;
 import dev.achiri.multivault.common.exception.RecursoDuplicadoException;
 import dev.achiri.multivault.plan.model.Plan;
 import dev.achiri.multivault.plan.repository.PlanRepository;
-import dev.achiri.multivault.tenant.dto.CreateOrganizationRequest;
-import dev.achiri.multivault.tenant.dto.CreateOrganizationResponse;
+import dev.achiri.multivault.tenant.dto.CreateTenantRequest;
+import dev.achiri.multivault.tenant.dto.CreateTenantResponse;
 import dev.achiri.multivault.tenant.model.TenantStatus;
 import dev.achiri.multivault.tenant.repository.TenantIdentityProviderRepository;
 import dev.achiri.multivault.tenant.repository.TenantMemberRepository;
@@ -76,7 +76,7 @@ class TenantProvisioningTest {
     void createsTenantWithSchemaUsageApiKeyAndAudit() {
         Plan plan = activePlan();
 
-        CreateOrganizationResponse response = tenantService.create(
+        CreateTenantResponse response = tenantService.create(
                 request("Acme Provisioned", plan.getId(), "sub_1", "admin@acme.com", identityProvider()));
 
         tenantId = response.tenant().id();
@@ -112,7 +112,7 @@ class TenantProvisioningTest {
     void createsTenantWithoutIdentityProvider() {
         Plan plan = activePlan();
 
-        CreateOrganizationResponse response = tenantService.create(
+        CreateTenantResponse response = tenantService.create(
                 request("Acme No Identity Provider", plan.getId(), "sub_2", "admin2@acme.com", null));
 
         tenantId = response.tenant().id();
@@ -126,10 +126,10 @@ class TenantProvisioningTest {
     @Test
     void rejectsDuplicateSchemaName() {
         Plan plan = activePlan();
-        CreateOrganizationRequest first = request("Acme Duplicate", plan.getId(), "sub_3", "admin3@acme.com", null);
-        CreateOrganizationRequest second = request("Acme Duplicate", plan.getId(), "sub_4", "admin4@acme.com", null);
+        CreateTenantRequest first = request("Acme Duplicate", plan.getId(), "sub_3", "admin3@acme.com", null);
+        CreateTenantRequest second = request("Acme Duplicate", plan.getId(), "sub_4", "admin4@acme.com", null);
 
-        CreateOrganizationResponse response = tenantService.create(first);
+        CreateTenantResponse response = tenantService.create(first);
         tenantId = response.tenant().id();
         schemaName = response.tenant().schemaName();
 
@@ -150,14 +150,14 @@ class TenantProvisioningTest {
         return planRepository.findAll().stream().filter(Plan::getIsActive).findFirst().orElseThrow();
     }
 
-    private CreateOrganizationRequest request(String name, UUID planId, String subject, String email,
-                                              CreateOrganizationRequest.IdentityProviderDto identityProvider) {
-        return new CreateOrganizationRequest(name, planId,
-                new CreateOrganizationRequest.AdminDto(subject, email, "Admin"), identityProvider);
+    private CreateTenantRequest request(String name, UUID planId, String subject, String email,
+                                        CreateTenantRequest.TenantIdentityProviderDto identityProvider) {
+        return new CreateTenantRequest(name, planId,
+                new CreateTenantRequest.TenantAdminDto(subject, email, "Admin"), identityProvider);
     }
 
-    private CreateOrganizationRequest.IdentityProviderDto identityProvider() {
-        return new CreateOrganizationRequest.IdentityProviderDto(
+    private CreateTenantRequest.TenantIdentityProviderDto identityProvider() {
+        return new CreateTenantRequest.TenantIdentityProviderDto(
                 "https://idp.acme.com",
                 "https://idp.acme.com/.well-known/jwks.json",
                 "https://api.acme.com",
