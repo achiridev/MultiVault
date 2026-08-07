@@ -9,7 +9,7 @@ import jakarta.validation.constraints.Size;
 import java.util.List;
 import java.util.UUID;
 
-public record CreateOrganizationRequest(
+public record CreateTenantRequest(
         @NotBlank
         String name,
 
@@ -18,12 +18,12 @@ public record CreateOrganizationRequest(
 
         @NotNull
         @Valid
-        AdminDto admin,
+        TenantAdminDto admin,
 
         @Valid
-        IdentityProviderDto identityProvider
+        TenantIdentityProviderDto identityProvider
 ) {
-    public record AdminDto(
+    public record TenantAdminDto(
             @NotBlank
             String subject,
 
@@ -36,7 +36,7 @@ public record CreateOrganizationRequest(
     ) {
     }
 
-    public record IdentityProviderDto(
+    public record TenantIdentityProviderDto(
             @NotBlank
             String issuer,
 

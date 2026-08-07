@@ -1,7 +1,7 @@
 package dev.achiri.multivault.tenant.mapper;
 
-import dev.achiri.multivault.tenant.dto.CreateOrganizationRequest;
-import dev.achiri.multivault.tenant.dto.CreateOrganizationResponse;
+import dev.achiri.multivault.tenant.dto.CreateTenantRequest;
+import dev.achiri.multivault.tenant.dto.CreateTenantResponse;
 import dev.achiri.multivault.tenant.model.TenantIdentityProvider;
 import org.mapstruct.Mapper;
 import org.mapstruct.Mapping;
@@ -18,7 +18,7 @@ public interface TenantIdentityProviderMapper {
             expression = "java(dto.allowedAlgorithms() == null ? java.util.List.of(\"RS256\") : dto.allowedAlgorithms())")
     @Mapping(target = "clockSkewSeconds",
             expression = "java(dto.clockSkewSeconds() == null ? 60 : dto.clockSkewSeconds())")
-    TenantIdentityProvider toEntity(CreateOrganizationRequest.IdentityProviderDto dto);
+    TenantIdentityProvider toEntity(CreateTenantRequest.TenantIdentityProviderDto dto);
 
-    CreateOrganizationResponse.IdentityProviderDto toDto(TenantIdentityProvider entity);
+    CreateTenantResponse.TenantIdentityProviderDto toDto(TenantIdentityProvider entity);
 }

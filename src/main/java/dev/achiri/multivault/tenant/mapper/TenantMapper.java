@@ -1,7 +1,7 @@
 package dev.achiri.multivault.tenant.mapper;
 
-import dev.achiri.multivault.tenant.dto.CreateOrganizationRequest;
-import dev.achiri.multivault.tenant.dto.CreateOrganizationResponse;
+import dev.achiri.multivault.tenant.dto.CreateTenantRequest;
+import dev.achiri.multivault.tenant.dto.CreateTenantResponse;
 import dev.achiri.multivault.tenant.model.Tenant;
 import org.mapstruct.Mapper;
 import org.mapstruct.Mapping;
@@ -17,7 +17,7 @@ public interface TenantMapper {
     @Mapping(target = "createdAt", ignore = true)
     @Mapping(target = "updatedAt", ignore = true)
     @Mapping(target = "currentPlanId", source = "planId")
-    Tenant toEntity(CreateOrganizationRequest request);
+    Tenant toEntity(CreateTenantRequest request);
 
-    CreateOrganizationResponse.TenantDto toDto(Tenant tenant);
+    CreateTenantResponse.TenantDto toDto(Tenant tenant);
 }

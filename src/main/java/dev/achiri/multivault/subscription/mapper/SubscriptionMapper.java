@@ -2,8 +2,8 @@ package dev.achiri.multivault.subscription.mapper;
 
 import dev.achiri.multivault.plan.model.Plan;
 import dev.achiri.multivault.subscription.model.Subscription;
-import dev.achiri.multivault.tenant.dto.CreateOrganizationRequest;
-import dev.achiri.multivault.tenant.dto.CreateOrganizationResponse;
+import dev.achiri.multivault.tenant.dto.CreateTenantRequest;
+import dev.achiri.multivault.tenant.dto.CreateTenantResponse;
 import org.mapstruct.Mapper;
 import org.mapstruct.Mapping;
 import org.mapstruct.ReportingPolicy;
@@ -20,9 +20,9 @@ public interface SubscriptionMapper {
     @Mapping(target = "cancelledAt", ignore = true)
     @Mapping(target = "createdAt", ignore = true)
     @Mapping(target = "updatedAt", ignore = true)
-    Subscription toEntity(CreateOrganizationRequest request);
+    Subscription toEntity(CreateTenantRequest request);
 
     @Mapping(target = "id", source = "subscription.id")
     @Mapping(target = "planCode", source = "plan.code")
-    CreateOrganizationResponse.SubscriptionDto toDto(Subscription subscription, Plan plan);
+    CreateTenantResponse.SubscriptionDto toDto(Subscription subscription, Plan plan);
 }

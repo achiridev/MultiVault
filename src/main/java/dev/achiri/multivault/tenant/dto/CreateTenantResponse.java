@@ -5,11 +5,11 @@ import dev.achiri.multivault.tenant.model.TenantStatus;
 import java.util.List;
 import java.util.UUID;
 
-public record CreateOrganizationResponse(
+public record CreateTenantResponse(
         TenantDto tenant,
         SubscriptionDto subscription,
-        AdminDto admin,
-        IdentityProviderDto identityProvider,
+        TenantAdminDto admin,
+        TenantIdentityProviderDto identityProvider,
         ApiKeyDto apiKey
 ) {
     public record TenantDto(
@@ -28,7 +28,7 @@ public record CreateOrganizationResponse(
     ) {
     }
 
-    public record AdminDto(
+    public record TenantAdminDto(
             UUID memberId,
             String subject,
             String email,
@@ -36,7 +36,7 @@ public record CreateOrganizationResponse(
     ) {
     }
 
-    public record IdentityProviderDto(
+    public record TenantIdentityProviderDto(
             String issuer,
             String jwksUri,
             String audience,

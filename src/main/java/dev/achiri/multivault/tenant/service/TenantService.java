@@ -5,16 +5,19 @@ import dev.achiri.multivault.common.exception.RecursoDuplicadoException;
 import dev.achiri.multivault.common.exception.RecursoNoEncontradoException;
 import dev.achiri.multivault.common.exception.TenantProvisioningException;
 import dev.achiri.multivault.common.util.SlugUtils;
-import dev.achiri.multivault.infrastructure.persistence.tenant.TenantProvisioningFailedEvent;
 import dev.achiri.multivault.infrastructure.persistence.tenant.TenantSchemaProvisioner;
 import dev.achiri.multivault.plan.model.Plan;
 import dev.achiri.multivault.plan.repository.PlanRepository;
 import dev.achiri.multivault.subscription.mapper.SubscriptionMapper;
-import dev.achiri.multivault.tenant.dto.CreateOrganizationRequest;
-import dev.achiri.multivault.tenant.dto.CreateOrganizationResponse;
+import dev.achiri.multivault.tenant.dto.CreateTenantRequest;
+import dev.achiri.multivault.tenant.dto.CreateTenantResponse;
 import dev.achiri.multivault.tenant.mapper.TenantIdentityProviderMapper;
 import dev.achiri.multivault.tenant.mapper.TenantMapper;
 import dev.achiri.multivault.tenant.mapper.TenantMemberMapper;
+import dev.achiri.multivault.tenant.provisioning.ActivationResult;
+import dev.achiri.multivault.tenant.provisioning.OnboardingResult;
+import dev.achiri.multivault.tenant.provisioning.TenantProvisioningFailedEvent;
+import dev.achiri.multivault.tenant.provisioning.TenantProvisioningService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -40,7 +43,7 @@ public class TenantService {
     private final TenantMemberMapper tenantMemberMapper;
     private final TenantIdentityProviderMapper tenantIdentityProviderMapper;
 
-    public CreateOrganizationResponse create(CreateOrganizationRequest request) {
+    public CreateTenantResponse create(CreateTenantRequest request) {
         Plan plan = planRepository.findById(request.planId())
                 .filter(Plan::getIsActive)
                 .orElseThrow(() -> new RecursoNoEncontradoException("plan", request.planId()));
@@ -51,7 +54,7 @@ public class TenantService {
         provisionSchema(onboarding.tenant().getId(), schemaName);
         ActivationResult activation = tenantProvisioningService.activate(onboarding, plan);
 
-        return new CreateOrganizationResponse(
+        return new CreateTenantResponse(
                 tenantMapper.toDto(activation.tenant()),
                 subscriptionMapper.toDto(onboarding.subscription(), plan),
                 tenantMemberMapper.toDto(onboarding.admin()),
@@ -61,7 +64,7 @@ public class TenantService {
                 toApiKeyDto(activation.apiKey()));
     }
 
-    private OnboardingResult initialize(CreateOrganizationRequest request, Plan plan, String schemaName) {
+    private OnboardingResult initialize(CreateTenantRequest request, Plan plan, String schemaName) {
         try {
             return tenantProvisioningService.initialize(request, plan, schemaName);
         } catch (DataIntegrityViolationException e) {
@@ -80,8 +83,8 @@ public class TenantService {
         }
     }
 
-    private CreateOrganizationResponse.ApiKeyDto toApiKeyDto(ApiKeyResult apiKey) {
-        return new CreateOrganizationResponse.ApiKeyDto(
+    private CreateTenantResponse.ApiKeyDto toApiKeyDto(ApiKeyResult apiKey) {
+        return new CreateTenantResponse.ApiKeyDto(
                 apiKey.id(),
                 apiKey.name(),
                 apiKey.keyPrefix(),

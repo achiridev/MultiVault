@@ -1,4 +1,4 @@
-package dev.achiri.multivault.infrastructure.persistence.tenant;
+package dev.achiri.multivault.tenant.provisioning;
 
 import java.util.UUID;
 

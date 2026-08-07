@@ -1,4 +1,4 @@
-package dev.achiri.multivault.tenant.service;
+package dev.achiri.multivault.tenant.provisioning;
 
 import dev.achiri.multivault.subscription.model.Subscription;
 import dev.achiri.multivault.tenant.model.Tenant;

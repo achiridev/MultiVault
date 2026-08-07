@@ -1,7 +1,7 @@
 package dev.achiri.multivault.tenant.mapper;
 
-import dev.achiri.multivault.tenant.dto.CreateOrganizationRequest;
-import dev.achiri.multivault.tenant.dto.CreateOrganizationResponse;
+import dev.achiri.multivault.tenant.dto.CreateTenantRequest;
+import dev.achiri.multivault.tenant.dto.CreateTenantResponse;
 import dev.achiri.multivault.tenant.model.TenantMember;
 import org.mapstruct.Mapper;
 import org.mapstruct.Mapping;
@@ -15,8 +15,8 @@ public interface TenantMemberMapper {
     @Mapping(target = "isActive", ignore = true)
     @Mapping(target = "firstSeenAt", ignore = true)
     @Mapping(target = "lastSeenAt", ignore = true)
-    TenantMember toEntity(CreateOrganizationRequest.AdminDto dto);
+    TenantMember toEntity(CreateTenantRequest.TenantAdminDto dto);
 
     @Mapping(target = "memberId", source = "id")
-    CreateOrganizationResponse.AdminDto toDto(TenantMember member);
+    CreateTenantResponse.TenantAdminDto toDto(TenantMember member);
 }
