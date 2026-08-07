@@ -17,7 +17,7 @@ El diseño de los servicios se infiere de las entidades y la funcionalidad esper
 | Servicio | Responsabilidades |
 |---|---|
 | `TenantService` ✅ | CRUD tenants, orquesta aprovisionamiento — `create` implementado (no transaccional) |
-| `TenantProvisioningService` ✅ | TX de onboarding: `initialize`, `markProvisioningFailed`, `activate` |
+| `TenantProvisioningService` ✅ | TX de onboarding (`tenant/provisioning/`): `initialize`, `markProvisioningFailed`, `activate` |
 | `TenantSchemaProvisioner` ✅ | CREATE SCHEMA + Flyway por tenant (`infrastructure/persistence/tenant`) |
 | `ApiKeyService` ✅ | Creación de API keys (generación raw + hash SHA-256); revocación/validación pendientes |
 | `SubscriptionService` | Gestión de suscripciones, cambio de plan, facturación |
