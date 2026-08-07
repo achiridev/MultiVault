@@ -6,7 +6,7 @@ Documentar la estrategia de multi-tenancy del sistema, que utiliza aislamiento f
 
 ## Estado actual
 
-La estrategia está definida completamente en los esquemas SQL, pero no hay implementación en la capa de aplicación.
+La estrategia está definida en los esquemas SQL y **implementada en la capa de aplicación**: el flujo de aprovisionamiento crea el schema físico y migra el template por tenant al crear una organización (ADR-0004).
 
 ## Información encontrada
 
@@ -39,10 +39,14 @@ Cada tenant tiene un schema PostgreSQL propio. Las tablas compartidas viven en e
 
 ### Flujo de aprovisionamiento de tenant
 
-1. Se inserta una fila en `tenant` con `status = 'PENDING_PROVISIONING'`
-2. La aplicación crea el schema físico: `CREATE SCHEMA tenant_<nombre>;`
-3. Se ejecuta `tenant_schema.sql` contra ese schema
-4. Se actualiza `tenant.status = 'ACTIVE'`
+Implementado en `POST /api/v1/tenants` (ADR-0004). Tres límites transaccionales:
+
+1. **TX 1** — `TenantProvisioningService.initialize`: inserta `tenant` con `status = 'PENDING_PROVISIONING'`, `subscription` (`ACTIVE`), `tenant_usage`, `tenant_member` (admin) e `identity_provider` (opcional). COMMIT.
+2. **Fuera de transacción** — `TenantSchemaProvisioner.provision`: `CREATE SCHEMA <schema>;` + Flyway programático sobre `classpath:db/tenant` (historial `flyway_schema_history` dentro del schema del tenant).
+   - Si falla → `markProvisioningFailed` (tenant `SUSPENDED` + `suspended_reason = 'schema_provisioning_failed'`) + `TenantProvisioningFailedEvent` (notifica al admin; canal log hoy) + error 500.
+3. **TX 2** — `TenantProvisioningService.activate`: tenant `status = 'ACTIVE'` + `current_plan_id`, creación de la API key inicial del admin (`ApiKeyService.createInitial`) y auditoría `TENANT_CREATED` (AFTER_COMMIT).
+
+`schema_name` se genera como `mv_` + slug del `name` (vacío → 400; truncado a 63 caracteres). Un `schema_name` duplicado responde 409.
 
 ### Validación de schema_name
 
@@ -63,12 +67,12 @@ Límite de 63 caracteres (límite de identificadores PostgreSQL).
 - [ ] Implementar `TenantContext` holder (ThreadLocal) para mantener el tenant actual en cada request
 - [ ] Implementar filtro/middleware que resuelva el tenant desde el request (dominio, header, JWT)
 - [ ] Implementar `TenantConnectionProvider` o `MultiTenantConnectionProvider` para Hibernate
-- [ ] Implementar servicio de aprovisionamiento de nuevos tenants (crear schema, ejecutar tenant_schema.sql)
+- [x] Implementar servicio de aprovisionamiento de nuevos tenants (crear schema, ejecutar tenant_schema.sql) — ADR-0004
 - [ ] Implementar lógica de suspensión/cancelación de tenants
-- [ ] Agregar migraciones Flyway para schemas de tenant
+- [x] Agregar migraciones Flyway para schemas de tenant — `db/tenant/V1__tenant_schema.sql`
 
 ## Preguntas abiertas
 
 - ¿Cómo se resuelve el tenant en cada request? ¿Por subdominio (`tenant1.app.com`), header (`X-Tenant-ID`), o del JWT?
 - ¿Se usará un pool de conexiones por tenant o un pool único con `search_path` dinámico?
-- ¿Cómo se maneja la ejecución de migraciones Flyway en schemas de tenant existentes?
+- ¿Cómo se reintenta un tenant con `status = 'SUSPENDED'` por fallo de aprovisionamiento (retry manual o automático)?

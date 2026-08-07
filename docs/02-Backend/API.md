@@ -10,7 +10,7 @@ Implementado: `POST /api/v1/tenants` (creación de organización). El resto de e
 
 ### POST `/api/v1/tenants` — Crear organización (implementado)
 
-Crea de forma transaccional: `tenant`, `subscription` (ACTIVE), `tenant_identity_provider` y `tenant_member` (admin). `schema_name` se deriva de `name` (`mv_` + slug). Requiere `planId` existente y activo (`404` si no); `201 Created` en éxito. `audience` del identity provider es obligatorio (columna NOT NULL).
+Crea el tenant con su schema físico: `tenant` (`PENDING_PROVISIONING` → `ACTIVE`), `subscription` (ACTIVE), `tenant_usage`, `tenant_member` (admin), `tenant_identity_provider` (opcional), schema PostgreSQL migrado vía Flyway (`db/tenant`) y la API key inicial del admin (raw mostrada una sola vez). `schema_name` se deriva de `name` (`mv_` + slug). Requiere `planId` existente y activo (`404` si no); `201 Created` en éxito; `409` si `schema_name` duplicado; `400` si `name` no genera slug válido. Si el aprovisionamiento del schema falla, el tenant queda `SUSPENDED` y el endpoint responde `500`.
 
 Request:
 ```json
@@ -28,19 +28,20 @@ Request:
 }
 ```
 
-`admin.displayName` opcional; `allowedAlgorithms` (default `RS256`) y `clockSkewSeconds` (default `60`) opcionales con override.
+`admin.displayName` opcional; `identityProvider` **opcional** (si llega, `audience` es obligatorio); `allowedAlgorithms` (default `RS256`) y `clockSkewSeconds` (default `60`) opcionales con override.
 
 Response `201 Created`:
 ```json
 {
-  "tenant": { "id": "...", "name": "Acme Inc", "schemaName": "mv_acme_inc", "status": "PENDING_PROVISIONING" },
+  "tenant": { "id": "...", "name": "Acme Inc", "schemaName": "mv_acme_inc", "status": "ACTIVE" },
   "subscription": { "id": "...", "planId": "...", "planCode": "PRO", "status": "ACTIVE" },
   "admin": { "memberId": "...", "subject": "sub_123", "email": "admin@acme.com", "displayName": "Jane Doe" },
-  "identityProvider": { "issuer": "...", "jwksUri": "...", "audience": "...", "allowedAlgorithms": ["RS256"], "clockSkewSeconds": 90 }
+  "identityProvider": { "issuer": "...", "jwksUri": "...", "audience": "...", "allowedAlgorithms": ["RS256"], "clockSkewSeconds": 90 },
+  "apiKey": { "id": "...", "name": "Initial Admin Key", "keyPrefix": "mv_live_a1b2", "keyType": "STANDARD", "key": "mv_live_..." }
 }
 ```
 
-`status` queda `PENDING_PROVISIONING` hasta que se implemente el aprovisionamiento físico del schema por tenant.
+`apiKey.key` es la key raw y se devuelve **una única vez**; solo el hash (`key_hash`) se almacena en BD.
 
 ## Información encontrada
 

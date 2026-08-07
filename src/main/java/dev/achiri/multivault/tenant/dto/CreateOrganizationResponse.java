@@ -9,7 +9,8 @@ public record CreateOrganizationResponse(
         TenantDto tenant,
         SubscriptionDto subscription,
         AdminDto admin,
-        IdentityProviderDto identityProvider
+        IdentityProviderDto identityProvider,
+        ApiKeyDto apiKey
 ) {
     public record TenantDto(
             UUID id,
@@ -41,6 +42,15 @@ public record CreateOrganizationResponse(
             String audience,
             List<String> allowedAlgorithms,
             Integer clockSkewSeconds
+    ) {
+    }
+
+    public record ApiKeyDto(
+            UUID id,
+            String name,
+            String keyPrefix,
+            String keyType,
+            String key
     ) {
     }
 }

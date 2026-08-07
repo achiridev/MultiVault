@@ -24,7 +24,7 @@ El proyecto se encuentra en una fase temprana de desarrollo. Existen definicione
 |---|---|
 | `MultivaultApplication.java` (entry point) | Entidades JPA |
 | `V1__public_schema.sql` (9 tablas públicas) | Repositorios Spring Data |
-| `tenant_schema.sql` (4 tablas + trigger por tenant) | Servicios (@Service) |
+| `db/tenant/V1__tenant_schema.sql` (4 tablas + trigger por tenant) | Servicios (@Service) |
 | `pom.xml` con dependencias del stack | Controladores REST |
 | `application.yaml` (skeleton, 3 líneas) | Configuración Spring Security |
 | Test de contexto vacío (`@SpringBootTest`) | Configuración DataSource/Flyway |

@@ -21,7 +21,7 @@ La arquitectura está definida a nivel de esquema de base de datos y stack tecno
 | Validación | Spring Validation (Jakarta Validation) |
 | API | Spring Web MVC (Servlet, no WebFlux) |
 | Base de datos | PostgreSQL con extensión `pgcrypto` |
-| Migraciones | Flyway (formato, pero sin dependencia en pom.xml) |
+| Migraciones | Flyway (schema público `db/migration`; por tenant vía instancia programática `db/tenant` — ADR-0004) |
 | Build | Maven 3.9.16 + Maven Wrapper |
 | Procesamiento | Lombok (annotation processor) |
 | Testing | JUnit 5 + Spring Boot Test slices |
@@ -33,13 +33,13 @@ Cliente HTTP
     ↓
 Controladores REST (Spring MVC) — PARCIAL: `TenantController` (POST /api/v1/tenants)
     ↓
-Servicios (Spring @Service) — PARCIAL: `TenantService` (creación transaccional de organización)
+Servicios (Spring @Service) — PARCIAL: `TenantService` (orquesta aprovisionamiento), `TenantProvisioningService`, `ApiKeyService`
     ↓
 Mappers (MapStruct, generados en compile) — `tenant/mapper/`, `subscription/mapper/`
     ↓
-Repositorios (Spring Data JPA) — PARCIAL: `TenantRepository`, `TenantIdentityProviderRepository`, `TenantMemberRepository`, `PlanRepository`, `SubscriptionRepository`
+Repositorios (Spring Data JPA) — PARCIAL: `TenantRepository`, `TenantIdentityProviderRepository`, `TenantMemberRepository`, `TenantUsageRepository`, `PlanRepository`, `SubscriptionRepository`, `ApiKeyRepository`
     ↓
-Entidades JPA — PARCIAL: `Tenant`, `TenantIdentityProvider`, `TenantMember`, `Plan`, `Subscription`
+Entidades JPA — PARCIAL: `Tenant`, `TenantIdentityProvider`, `TenantMember`, `TenantUsage`, `Plan`, `Subscription`, `ApiKey`
     ↓
 PostgreSQL (público + esquemas por tenant)
 ```
@@ -64,17 +64,17 @@ dev.achiri.multivault
 ## Pendientes
 
 - [ ] Crear estructura de paquetes (`entity`, `repository`, `service`, `controller`, `config`, `security`, `dto`, `exception`)
-- [x] Implementar capa de entidades JPA del schema público (resto: `api_key`, `platform_user`, `tenant_usage`, `audit_log`)
+- [x] Implementar capa de entidades JPA del schema público (resto: `platform_user`)
 - [ ] Implementar capa de entidades JPA del schema por tenant
-- [x] Implementar repositorios de los dominios tenant/plan/subscription
+- [x] Implementar repositorios de los dominios tenant/plan/subscription/apikey
 - [ ] Implementar repositorios del resto de dominios
-- [x] Implementar `TenantService` (creación de organización)
+- [x] Implementar `TenantService` (creación de organización + aprovisionamiento de schema + API key)
 - [ ] Implementar el resto de servicios
 - [x] Implementar `TenantController` (POST /api/v1/tenants)
 - [ ] Implementar el resto de controladores REST
 - [x] Configurar MapStruct (ADR-0002) — mappers de `tenant` y `subscription`
 - [ ] Configurar Spring Security
-- [ ] Configurar Flyway
+- [x] Configurar Flyway (schema público + migraciones por tenant — ADR-0004)
 - [ ] Configurar DataSource y JPA
 
 ## Preguntas abiertas
