@@ -1,0 +1,167 @@
+package dev.achiri.multivault.tenant;
+
+import dev.achiri.multivault.apikey.repository.ApiKeyRepository;
+import dev.achiri.multivault.audit.model.AuditLog;
+import dev.achiri.multivault.audit.repository.AuditLogRepository;
+import dev.achiri.multivault.common.exception.RecursoDuplicadoException;
+import dev.achiri.multivault.plan.model.Plan;
+import dev.achiri.multivault.plan.repository.PlanRepository;
+import dev.achiri.multivault.tenant.dto.CreateOrganizationRequest;
+import dev.achiri.multivault.tenant.dto.CreateOrganizationResponse;
+import dev.achiri.multivault.tenant.model.TenantStatus;
+import dev.achiri.multivault.tenant.repository.TenantIdentityProviderRepository;
+import dev.achiri.multivault.tenant.repository.TenantMemberRepository;
+import dev.achiri.multivault.tenant.repository.TenantRepository;
+import dev.achiri.multivault.tenant.repository.TenantUsageRepository;
+import dev.achiri.multivault.tenant.service.TenantService;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.test.context.ActiveProfiles;
+
+import java.util.List;
+import java.util.UUID;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+
+@SpringBootTest
+@ActiveProfiles("local")
+class TenantProvisioningTest {
+
+    @Autowired
+    private TenantService tenantService;
+
+    @Autowired
+    private TenantRepository tenantRepository;
+
+    @Autowired
+    private TenantUsageRepository tenantUsageRepository;
+
+    @Autowired
+    private TenantMemberRepository tenantMemberRepository;
+
+    @Autowired
+    private TenantIdentityProviderRepository tenantIdentityProviderRepository;
+
+    @Autowired
+    private ApiKeyRepository apiKeyRepository;
+
+    @Autowired
+    private AuditLogRepository auditLogRepository;
+
+    @Autowired
+    private PlanRepository planRepository;
+
+    @Autowired
+    private JdbcTemplate jdbcTemplate;
+
+    private UUID tenantId;
+    private String schemaName;
+
+    @AfterEach
+    void tearDown() {
+        if (schemaName != null) {
+            jdbcTemplate.execute("DROP SCHEMA IF EXISTS " + schemaName + " CASCADE");
+        }
+        if (tenantId != null) {
+            auditLogRepository.deleteAll(auditLogRepository.findByTenantIdOrderByCreatedAtDesc(tenantId));
+            tenantRepository.deleteById(tenantId);
+        }
+    }
+
+    @Test
+    void createsTenantWithSchemaUsageApiKeyAndAudit() {
+        Plan plan = activePlan();
+
+        CreateOrganizationResponse response = tenantService.create(
+                request("Acme Provisioned", plan.getId(), "sub_1", "admin@acme.com", identityProvider()));
+
+        tenantId = response.tenant().id();
+        schemaName = response.tenant().schemaName();
+
+        assertThat(response.tenant().status()).isEqualTo(TenantStatus.ACTIVE);
+        assertThat(response.apiKey().key()).startsWith("mv_live_");
+        assertThat(response.apiKey().keyPrefix()).hasSize(12);
+        assertThat(response.apiKey().keyType()).isEqualTo("STANDARD");
+
+        var stored = tenantRepository.findById(tenantId).orElseThrow();
+        assertThat(stored.getStatus()).isEqualTo(TenantStatus.ACTIVE);
+        assertThat(stored.getCurrentPlanId()).isEqualTo(plan.getId());
+
+        Integer schemaCount = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM information_schema.schemata WHERE schema_name = ?",
+                Integer.class, schemaName);
+        assertThat(schemaCount).isEqualTo(1);
+
+        Integer folderCount = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM " + schemaName + ".folder", Integer.class);
+        assertThat(folderCount).isZero();
+
+        assertThat(tenantUsageRepository.findById(tenantId)).isPresent();
+        assertThat(tenantMemberRepository.findAll()).anyMatch(member -> member.getTenantId().equals(tenantId));
+        assertThat(apiKeyRepository.findAll()).anyMatch(key -> key.getTenantId().equals(tenantId));
+
+        List<AuditLog> logs = auditLogRepository.findByTenantIdOrderByCreatedAtDesc(tenantId);
+        assertThat(logs).anyMatch(log -> log.getAction().equals("TENANT_CREATED"));
+    }
+
+    @Test
+    void createsTenantWithoutIdentityProvider() {
+        Plan plan = activePlan();
+
+        CreateOrganizationResponse response = tenantService.create(
+                request("Acme No Identity Provider", plan.getId(), "sub_2", "admin2@acme.com", null));
+
+        tenantId = response.tenant().id();
+        schemaName = response.tenant().schemaName();
+
+        assertThat(response.identityProvider()).isNull();
+        assertThat(response.tenant().status()).isEqualTo(TenantStatus.ACTIVE);
+        assertThat(tenantIdentityProviderRepository.findById(tenantId)).isEmpty();
+    }
+
+    @Test
+    void rejectsDuplicateSchemaName() {
+        Plan plan = activePlan();
+        CreateOrganizationRequest first = request("Acme Duplicate", plan.getId(), "sub_3", "admin3@acme.com", null);
+        CreateOrganizationRequest second = request("Acme Duplicate", plan.getId(), "sub_4", "admin4@acme.com", null);
+
+        CreateOrganizationResponse response = tenantService.create(first);
+        tenantId = response.tenant().id();
+        schemaName = response.tenant().schemaName();
+
+        assertThatThrownBy(() -> tenantService.create(second))
+                .isInstanceOf(RecursoDuplicadoException.class);
+    }
+
+    @Test
+    void rejectsNameWithoutValidSlug() {
+        Plan plan = activePlan();
+
+        assertThatThrownBy(() -> tenantService.create(
+                request("!!!", plan.getId(), "sub_5", "admin5@acme.com", null)))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    private Plan activePlan() {
+        return planRepository.findAll().stream().filter(Plan::getIsActive).findFirst().orElseThrow();
+    }
+
+    private CreateOrganizationRequest request(String name, UUID planId, String subject, String email,
+                                              CreateOrganizationRequest.IdentityProviderDto identityProvider) {
+        return new CreateOrganizationRequest(name, planId,
+                new CreateOrganizationRequest.AdminDto(subject, email, "Admin"), identityProvider);
+    }
+
+    private CreateOrganizationRequest.IdentityProviderDto identityProvider() {
+        return new CreateOrganizationRequest.IdentityProviderDto(
+                "https://idp.acme.com",
+                "https://idp.acme.com/.well-known/jwks.json",
+                "https://api.acme.com",
+                null,
+                null);
+    }
+}
