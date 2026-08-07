@@ -4,11 +4,14 @@ import dev.achiri.multivault.common.exception.RecursoNoEncontradoException;
 import dev.achiri.multivault.common.util.SlugUtils;
 import dev.achiri.multivault.plan.model.Plan;
 import dev.achiri.multivault.plan.repository.PlanRepository;
+import dev.achiri.multivault.subscription.mapper.SubscriptionMapper;
 import dev.achiri.multivault.subscription.model.Subscription;
-import dev.achiri.multivault.subscription.model.SubscriptionStatus;
 import dev.achiri.multivault.subscription.repository.SubscriptionRepository;
 import dev.achiri.multivault.tenant.dto.CreateOrganizationRequest;
 import dev.achiri.multivault.tenant.dto.CreateOrganizationResponse;
+import dev.achiri.multivault.tenant.mapper.TenantIdentityProviderMapper;
+import dev.achiri.multivault.tenant.mapper.TenantMapper;
+import dev.achiri.multivault.tenant.mapper.TenantMemberMapper;
 import dev.achiri.multivault.tenant.model.Tenant;
 import dev.achiri.multivault.tenant.model.TenantIdentityProvider;
 import dev.achiri.multivault.tenant.model.TenantMember;
@@ -19,17 +22,20 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.time.Instant;
-import java.util.List;
-
 @Service
 @RequiredArgsConstructor
 public class TenantService {
+
     private final TenantRepository tenantRepository;
     private final PlanRepository planRepository;
     private final SubscriptionRepository subscriptionRepository;
     private final TenantIdentityProviderRepository tenantIdentityProviderRepository;
     private final TenantMemberRepository tenantMemberRepository;
+
+    private final TenantMapper tenantMapper;
+    private final SubscriptionMapper subscriptionMapper;
+    private final TenantIdentityProviderMapper tenantIdentityProviderMapper;
+    private final TenantMemberMapper tenantMemberMapper;
 
     @Transactional
     public CreateOrganizationResponse create(CreateOrganizationRequest request) {
@@ -37,62 +43,27 @@ public class TenantService {
                 .filter(Plan::getIsActive)
                 .orElseThrow(() -> new RecursoNoEncontradoException("plan", request.planId()));
 
-        Tenant tenant = new Tenant();
-        tenant.setName(request.name());
+        Tenant tenant = tenantMapper.toEntity(request);
         tenant.setSchemaName(generateSchemaName(request.name()));
-        tenant.setCurrentPlanId(plan.getId());
         tenantRepository.save(tenant);
 
-        Subscription subscription = new Subscription();
+        Subscription subscription = subscriptionMapper.toEntity(request);
         subscription.setTenantId(tenant.getId());
-        subscription.setPlanId(plan.getId());
-        subscription.setStatus(SubscriptionStatus.ACTIVE);
-        subscription.setStartsAt(Instant.now());
         subscriptionRepository.save(subscription);
 
-        TenantIdentityProvider identityProvider = new TenantIdentityProvider();
+        TenantIdentityProvider identityProvider = tenantIdentityProviderMapper.toEntity(request.identityProvider());
         identityProvider.setTenantId(tenant.getId());
-        identityProvider.setIssuer(request.identityProvider().issuer());
-        identityProvider.setJwksUri(request.identityProvider().jwksUri());
-        identityProvider.setAudience(request.identityProvider().audience());
-        identityProvider.setAllowedAlgorithms(
-                request.identityProvider().allowedAlgorithms() == null
-                        ? List.of("RS256")
-                        : request.identityProvider().allowedAlgorithms());
-        identityProvider.setClockSkewSeconds(
-                request.identityProvider().clockSkewSeconds() == null
-                        ? 60
-                        : request.identityProvider().clockSkewSeconds());
         tenantIdentityProviderRepository.save(identityProvider);
 
-        TenantMember admin = new TenantMember();
+        TenantMember admin = tenantMemberMapper.toEntity(request.admin());
         admin.setTenantId(tenant.getId());
-        admin.setSubject(request.admin().subject());
-        admin.setEmail(request.admin().email());
-        admin.setDisplayName(request.admin().displayName());
         tenantMemberRepository.save(admin);
 
-        return buildResponse(tenant, plan, subscription, admin, identityProvider);
-    }
-
-    private CreateOrganizationResponse buildResponse(
-            Tenant tenant,
-            Plan plan,
-            Subscription subscription,
-            TenantMember admin,
-            TenantIdentityProvider identityProvider) {
         return new CreateOrganizationResponse(
-                new CreateOrganizationResponse.TenantDto(
-                        tenant.getId(), tenant.getName(), tenant.getSchemaName(), tenant.getStatus()),
-                new CreateOrganizationResponse.SubscriptionDto(
-                        subscription.getId(), subscription.getPlanId(),
-                        plan.getCode().name(), subscription.getStatus().name()),
-                new CreateOrganizationResponse.AdminDto(
-                        admin.getId(), admin.getSubject(), admin.getEmail(), admin.getDisplayName()),
-                new CreateOrganizationResponse.IdentityProviderDto(
-                        identityProvider.getIssuer(), identityProvider.getJwksUri(),
-                        identityProvider.getAudience(), identityProvider.getAllowedAlgorithms(),
-                        identityProvider.getClockSkewSeconds()));
+                tenantMapper.toDto(tenant),
+                subscriptionMapper.toDto(subscription, plan),
+                tenantMemberMapper.toDto(admin),
+                tenantIdentityProviderMapper.toDto(identityProvider));
     }
 
     private String generateSchemaName(String name) {
