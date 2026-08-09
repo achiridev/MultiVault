@@ -6,9 +6,10 @@ Documentar la estructura completa de la base de datos, migraciones, convenciones
 
 ## Estado actual
 
-La base de datos está completamente modelada a nivel SQL con dos archivos:
+La base de datos está completamente modelada a nivel SQL con tres archivos:
 1. `db/migration/V1__public_schema.sql` — Schema público (181 líneas, 9 tablas)
 2. `db/tenant/V1__tenant_schema.sql` — Schema por tenant (116 líneas, 4 tablas + trigger + FK circular)
+3. `db/tenant/V2__fix_document_owner_permission_trigger.sql` — Trigger owner permission independiente del `search_path`
 
 Flyway está habilitado (`spring-boot-starter-flyway` + `flyway-database-postgresql`) y ejecuta las migraciones de `classpath:db/migration` al arrancar contra el DataSource de `DB_URL`. Las migraciones ya aplicadas se registran en la tabla `flyway_schema_history`. El template por tenant (`classpath:db/tenant`) NO lo ejecuta el Flyway principal: se aplica por schema con una instancia Flyway programática al aprovisionar cada tenant (ADR-0004).
 
@@ -61,6 +62,8 @@ AFTER INSERT ON document
 FOR EACH ROW EXECUTE FUNCTION fn_document_owner_permission();
 ```
 
+V1 definía `fn_document_owner_permission` referenciando `document_permission` sin calificar: la función depende del `search_path` de la conexión al ejecutarse. V2 la reemplaza y resuelve el schema desde la propia tabla del trigger (`TG_RELID` + `pg_namespace`), con `EXECUTE format(...) USING ...` — funciona con cualquier `search_path` (detectado por el test de integración).
+
 ### Convenciones generales
 
 - **UUIDs:** Todas las PKs usan `UUID` con `DEFAULT gen_random_uuid()` (requiere extensión `pgcrypto`)
@@ -80,9 +83,9 @@ FOR EACH ROW EXECUTE FUNCTION fn_document_owner_permission();
 ## Pendientes
 
 - [x] Implementar estrategia de migraciones para schemas de tenant — ADR-0004 (`db/tenant/V1__tenant_schema.sql`)
+- [x] Configurar BD de tests — Testcontainers con PostgreSQL (ADR-0005)
 
 ## Preguntas abiertas
 
 - ¿Cómo se manejarán las migraciones Flyway en los schemas de tenant existentes cuando se agreguen nuevas tablas?
 - ¿Se usará `ddl-auto: validate` para verificar que las entidades coinciden con el schema?
-- ¿Se requiere una base de datos separada para tests o se usará H2/Testcontainers?

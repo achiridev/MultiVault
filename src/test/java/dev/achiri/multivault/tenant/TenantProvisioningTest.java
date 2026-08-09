@@ -9,9 +9,11 @@ import dev.achiri.multivault.common.exception.TenantProvisioningException;
 import dev.achiri.multivault.infrastructure.persistence.tenant.TenantSchemaProvisioner;
 import dev.achiri.multivault.plan.model.Plan;
 import dev.achiri.multivault.plan.repository.PlanRepository;
+import dev.achiri.multivault.support.BaseIntegrationTest;
 import dev.achiri.multivault.tenant.dto.CreateTenantRequest;
 import dev.achiri.multivault.tenant.dto.CreateTenantResponse;
 import dev.achiri.multivault.tenant.model.Tenant;
+import dev.achiri.multivault.tenant.model.TenantIdentityProvider;
 import dev.achiri.multivault.tenant.model.TenantStatus;
 import dev.achiri.multivault.tenant.repository.TenantIdentityProviderRepository;
 import dev.achiri.multivault.tenant.repository.TenantMemberRepository;
@@ -21,11 +23,9 @@ import dev.achiri.multivault.tenant.service.TenantService;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.test.context.support.WithMockUser;
-import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import org.springframework.test.web.servlet.MockMvc;
 
@@ -39,12 +39,11 @@ import static org.mockito.Mockito.doThrow;
 import static org.springframework.http.MediaType.APPLICATION_JSON;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-@SpringBootTest
 @AutoConfigureMockMvc
-@ActiveProfiles("local")
-class TenantProvisioningTest {
+class TenantProvisioningTest extends BaseIntegrationTest {
 
     @Autowired
     private TenantService tenantService;
@@ -121,6 +120,28 @@ class TenantProvisioningTest {
                 "SELECT COUNT(*) FROM " + schemaName + ".folder", Integer.class);
         assertThat(folderCount).isZero();
 
+        List<String> tenantTables = jdbcTemplate.queryForList(
+                "SELECT table_name FROM information_schema.tables WHERE table_schema = ?",
+                String.class, schemaName);
+        assertThat(tenantTables).contains(
+                "folder", "document", "document_version", "document_permission", "flyway_schema_history");
+
+        Integer triggerCount = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM information_schema.triggers WHERE trigger_schema = ? AND trigger_name = ?",
+                Integer.class, schemaName, "trg_document_owner_permission");
+        assertThat(triggerCount).isEqualTo(1);
+
+        Integer indexCount = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM pg_indexes WHERE schemaname = ? AND indexname IN (?, ?, ?, ?)",
+                Integer.class, schemaName, "uq_folder_root_name", "uq_folder_parent_name_active",
+                "uq_document_permission", "uq_document_single_owner");
+        assertThat(indexCount).isEqualTo(4);
+
+        Integer appliedMigrations = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM " + schemaName + ".flyway_schema_history WHERE success = true",
+                Integer.class);
+        assertThat(appliedMigrations).isEqualTo(2);
+
         assertThat(tenantUsageRepository.findById(tenantId)).isPresent();
         assertThat(tenantMemberRepository.findAll()).anyMatch(member -> member.getTenantId().equals(tenantId));
         assertThat(apiKeyRepository.findAll()).anyMatch(key -> key.getTenantId().equals(tenantId));
@@ -130,18 +151,83 @@ class TenantProvisioningTest {
     }
 
     @Test
-    void createsTenantWithoutIdentityProvider() {
+    void appliesDocumentOwnerPermissionTriggerOnInsert() {
         Plan plan = activePlan();
 
         CreateTenantResponse response = tenantService.create(
-                request("Acme No Identity Provider", plan.getId(), "sub_2", "admin2@acme.com", null));
-
+                request("Acme Trigger", plan.getId(), "sub_9", "admin9@acme.com", null));
         tenantId = response.tenant().id();
         schemaName = response.tenant().schemaName();
 
-        assertThat(response.identityProvider()).isNull();
-        assertThat(response.tenant().status()).isEqualTo(TenantStatus.ACTIVE);
-        assertThat(tenantIdentityProviderRepository.findById(tenantId)).isEmpty();
+        UUID folderId = UUID.randomUUID();
+        UUID documentId = UUID.randomUUID();
+        UUID ownerId = UUID.randomUUID();
+
+        jdbcTemplate.update("INSERT INTO " + schemaName + ".folder (id, name, created_by) VALUES (?, ?, ?)",
+                folderId, "Invoices", ownerId);
+        jdbcTemplate.update("INSERT INTO " + schemaName + ".document (id, folder_id, owner_user_id, status) "
+                        + "VALUES (?, ?, ?, 'ACTIVE')",
+                documentId, folderId, ownerId);
+
+        Integer ownerPermissions = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM " + schemaName + ".document_permission "
+                        + "WHERE document_id = ? AND permission_level = 'OWNER' AND user_id = ?",
+                Integer.class, documentId, ownerId);
+        assertThat(ownerPermissions).isEqualTo(1);
+    }
+
+    @Test
+    void provisionIsIdempotent() {
+        Plan plan = activePlan();
+
+        CreateTenantResponse response = tenantService.create(
+                request("Acme Idempotent", plan.getId(), "sub_10", "admin10@acme.com", null));
+        tenantId = response.tenant().id();
+        schemaName = response.tenant().schemaName();
+
+        tenantSchemaProvisioner.provision(schemaName);
+
+        Integer appliedMigrations = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM " + schemaName + ".flyway_schema_history WHERE success = true",
+                Integer.class);
+        assertThat(appliedMigrations).isEqualTo(2);
+    }
+
+    @Test
+    void rejectsInvalidSchemaNames() {
+        assertThatThrownBy(() -> tenantSchemaProvisioner.provision(null))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> tenantSchemaProvisioner.provision(""))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> tenantSchemaProvisioner.provision("1acme"))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> tenantSchemaProvisioner.provision("Acme"))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> tenantSchemaProvisioner.provision("ac me"))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> tenantSchemaProvisioner.provision("acme$"))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    @WithMockUser
+    void rejectsTenantWithoutIdentityProvider() throws Exception {
+        Plan plan = activePlan();
+
+        mockMvc.perform(post("/api/v1/tenants")
+                        .with(csrf())
+                        .contentType(APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "name": "Acme No Identity Provider",
+                                  "planId": "%s",
+                                  "admin": {
+                                    "subject": "sub_2",
+                                    "email": "admin2@acme.com"
+                                  }
+                                }
+                                """.formatted(plan.getId())))
+                .andExpect(status().isBadRequest());
     }
 
     @Test
@@ -224,6 +310,75 @@ class TenantProvisioningTest {
                                     "subject": "",
                                     "email": "not-an-email"
                                   }
+                                }
+                                """))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    @WithMockUser
+    void updatesTenantIdentityProvider() throws Exception {
+        Plan plan = activePlan();
+
+        CreateTenantResponse response = tenantService.create(
+                request("Acme Update IdP", plan.getId(), "sub_11", "admin11@acme.com", identityProvider()));
+        tenantId = response.tenant().id();
+        schemaName = response.tenant().schemaName();
+
+        mockMvc.perform(put("/api/v1/tenants/{tenantId}/identity-provider", tenantId)
+                        .with(csrf())
+                        .contentType(APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "issuer": "https://idp.acme.com/v2",
+                                  "jwksUri": "https://idp.acme.com/v2/.well-known/jwks.json",
+                                  "audience": "https://api.acme.com",
+                                  "allowedAlgorithms": ["RS256"],
+                                  "clockSkewSeconds": 120
+                                }
+                                """))
+                .andExpect(status().isOk());
+
+        TenantIdentityProvider stored = tenantIdentityProviderRepository.findById(tenantId).orElseThrow();
+        assertThat(stored.getIssuer()).isEqualTo("https://idp.acme.com/v2");
+        assertThat(stored.getJwksUri()).isEqualTo("https://idp.acme.com/v2/.well-known/jwks.json");
+        assertThat(stored.getClockSkewSeconds()).isEqualTo(120);
+    }
+
+    @Test
+    @WithMockUser
+    void rejectsIdentityProviderForUnknownTenant() throws Exception {
+        mockMvc.perform(put("/api/v1/tenants/{tenantId}/identity-provider", UUID.randomUUID())
+                        .with(csrf())
+                        .contentType(APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "issuer": "https://idp.acme.com",
+                                  "jwksUri": "https://idp.acme.com/.well-known/jwks.json",
+                                  "audience": "https://api.acme.com"
+                                }
+                                """))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
+    @WithMockUser
+    void rejectsInvalidIdentityProviderBody() throws Exception {
+        Plan plan = activePlan();
+
+        CreateTenantResponse response = tenantService.create(
+                request("Acme Invalid IdP", plan.getId(), "sub_12", "admin12@acme.com", identityProvider()));
+        tenantId = response.tenant().id();
+        schemaName = response.tenant().schemaName();
+
+        mockMvc.perform(put("/api/v1/tenants/{tenantId}/identity-provider", tenantId)
+                        .with(csrf())
+                        .contentType(APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "issuer": "",
+                                  "jwksUri": "https://idp.acme.com/.well-known/jwks.json",
+                                  "audience": "https://api.acme.com"
                                 }
                                 """))
                 .andExpect(status().isBadRequest());

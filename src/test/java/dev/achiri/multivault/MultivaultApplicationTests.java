@@ -1,12 +1,9 @@
 package dev.achiri.multivault;
 
+import dev.achiri.multivault.support.BaseIntegrationTest;
 import org.junit.jupiter.api.Test;
-import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.test.context.ActiveProfiles;
 
-@SpringBootTest
-@ActiveProfiles("local")
-class MultivaultApplicationTests {
+class MultivaultApplicationTests extends BaseIntegrationTest {
 
     @Test
     void contextLoads() {

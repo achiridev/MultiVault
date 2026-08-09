@@ -1,0 +1,9 @@
+spring:
+  datasource:
+    url: jdbc:postgresql://localhost:5432/multivault
+    username: postgres
+    password: postgres
+
+logging:
+  level:
+    org.testcontainers: info

@@ -10,7 +10,7 @@ Implementado: `POST /api/v1/tenants` (creación de organización). El resto de e
 
 ### POST `/api/v1/tenants` — Crear organización (implementado)
 
-Crea el tenant con su schema físico: `tenant` (`PENDING_PROVISIONING` → `ACTIVE`), `subscription` (ACTIVE), `tenant_usage`, `tenant_member` (admin), `tenant_identity_provider` (opcional), schema PostgreSQL migrado vía Flyway (`db/tenant`) y la API key inicial del admin (raw mostrada una sola vez). `schema_name` se deriva de `name` (`mv_` + slug). Requiere `planId` existente y activo (`404` si no); `201 Created` en éxito; `409` si `schema_name` duplicado; `400` si `name` no genera slug válido. Si el aprovisionamiento del schema falla, el tenant queda `SUSPENDED` y el endpoint responde `500`.
+Crea el tenant con su schema físico: `tenant` (`PENDING_PROVISIONING` → `ACTIVE`), `subscription` (ACTIVE), `tenant_usage`, `tenant_member` (admin), `tenant_identity_provider` (obligatorio), schema PostgreSQL migrado vía Flyway (`db/tenant`) y la API key inicial del admin (raw mostrada una sola vez). `schema_name` se deriva de `name` (`mv_` + slug). Requiere `planId` existente y activo (`404` si no); `201 Created` en éxito; `409` si `schema_name` duplicado; `400` si `name` no genera slug válido. Si el aprovisionamiento del schema falla, el tenant queda `SUSPENDED` y el endpoint responde `500`.
 
 Request:
 ```json
@@ -28,7 +28,7 @@ Request:
 }
 ```
 
-`admin.displayName` opcional; `identityProvider` **opcional** (si llega, `audience` es obligatorio); `allowedAlgorithms` (default `RS256`) y `clockSkewSeconds` (default `60`) opcionales con override.
+`admin.displayName` opcional; `identityProvider` **obligatorio** (`audience` obligatorio); `allowedAlgorithms` (default `RS256`) y `clockSkewSeconds` (default `60`) opcionales con override.
 
 Response `201 Created`:
 ```json
@@ -43,9 +43,26 @@ Response `201 Created`:
 
 `apiKey.key` es la key raw y se devuelve **una única vez**; solo el hash (`key_hash`) se almacena en BD.
 
+### PUT `/api/v1/tenants/{tenantId}/identity-provider` — Actualizar identity provider (implementado)
+
+Actualiza (upsert) la configuración OIDC/JWT del tenant. `404` si el tenant no existe; `400` con body inválido; `200` con el DTO actualizado. Registra auditoría `TENANT_IDENTITY_PROVIDER_UPDATED`.
+
+Request:
+```json
+{
+  "issuer": "https://idp.acme.com/v2",
+  "jwksUri": "https://idp.acme.com/v2/.well-known/jwks.json",
+  "audience": "https://api.acme.com",
+  "allowedAlgorithms": ["RS256"],
+  "clockSkewSeconds": 120
+}
+```
+
+`allowedAlgorithms` y `clockSkewSeconds` opcionales con defaults (`RS256` / `60`).
+
 ## Información encontrada
 
-Sin controladores REST en el código fuente. El proyecto incluye `spring-boot-starter-webmvc` como dependencia, lo que confirma que la API será REST sobre Servlet.
+Existen controladores REST (`TenantController` en `/api/v1/tenants`) sobre Servlet (`spring-boot-starter-webmvc`).
 
 ### Posibles endpoints inferidos del schema
 
@@ -53,6 +70,7 @@ Sin controladores REST en el código fuente. El proyecto incluye `spring-boot-st
 | Método | Path | Descripción |
 |---|---|---|
 | POST | `/api/v1/tenants` | Crear nuevo tenant |
+| PUT | `/api/v1/tenants/{id}/identity-provider` | Actualizar identity provider |
 | GET | `/api/v1/tenants/{id}` | Obtener tenant |
 | GET | `/api/v1/tenants` | Listar tenants |
 | PATCH | `/api/v1/tenants/{id}` | Actualizar tenant |
