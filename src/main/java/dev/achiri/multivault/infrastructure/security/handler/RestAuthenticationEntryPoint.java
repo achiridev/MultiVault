@@ -1,4 +1,4 @@
-package dev.achiri.multivault.infrastructure.security.config;
+package dev.achiri.multivault.infrastructure.security.handler;
 
 import dev.achiri.multivault.common.response.ErrorResponse;
 import jakarta.servlet.http.HttpServletRequest;
