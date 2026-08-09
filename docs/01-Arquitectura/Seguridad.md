@@ -6,7 +6,7 @@ Documentar las consideraciones de seguridad del sistema, controles implementados
 
 ## Estado actual
 
-Existen controles de seguridad a nivel de base de datos (constraints, checks, índices parciales). Spring Security está configurado en `infrastructure/security/config/SecurityConfig`: CSRF deshabilitado, sesiones `STATELESS`, `POST /api/v1/tenants` público (onboarding self-serve) y el resto de endpoints autenticados. Autenticación por API key implementada (`ApiKeyAuthenticationFilter`): valida la key en cada request y responde `401` con `ErrorResponse` JSON (`RestAuthenticationEntryPoint`). JWT/login aún pendientes.
+Existen controles de seguridad a nivel de base de datos (constraints, checks, índices parciales). Spring Security está configurado en `infrastructure/security/config/SecurityConfig`: CSRF deshabilitado, sesiones `STATELESS`, `POST /api/v1/tenants` público (onboarding self-serve) y el resto de endpoints autenticados. Autenticación por API key implementada (`ApiKeyAuthenticationFilter`): valida la key en cada request con caché Redis y responde `401` con `ErrorResponse` JSON (`RestAuthenticationEntryPoint`, en `infrastructure.security.handler`). Autenticación JWT multi-issuer implementada (`JwtAuthenticationFilter`): valida la firma contra el JWKS del tenant (cacheado en Redis), exige `iss`/`aud` configurados y hace upsert de `tenant_member`. Login de platform_user pendiente.
 
 ## Información encontrada
 
@@ -45,7 +45,7 @@ El paquete `dev.achiri.multivault.audit` implementa la auditoría con eventos de
 
 - [x] Configurar Spring Security con cadena de filtros (`SecurityConfig`)
 - [ ] Implementar `SecurityFilterChain` con CORS, rate limiting — CSRF ya deshabilitado (API stateless)
-- [x] Implementar autenticación por API keys (`ApiKeyAuthenticationFilter`) — JWT multi-issuer y login de platform_user pendientes
+- [x] Implementar autenticación por API keys (`ApiKeyAuthenticationFilter`) y JWT multi-issuer (`JwtAuthenticationFilter`) — login de platform_user pendiente
 - [ ] Definir `@PreAuthorize` / `@PostAuthorize` en los controladores
 - [ ] Implementar validación de scopes de API keys
 - [ ] Implementar rate limiting por tenant y por API key

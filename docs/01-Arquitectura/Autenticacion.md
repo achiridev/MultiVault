@@ -6,7 +6,7 @@ Documentar el modelo de autenticación del sistema, que soporta tres mecanismos:
 
 ## Estado actual
 
-El modelo de datos para autenticación está completamente definido en el schema público. No existe implementación de Spring Security.
+El modelo de datos para autenticación está definido en el schema público. Spring Security está implementado con dos filtros: `ApiKeyAuthenticationFilter` (API keys M2M) y `JwtAuthenticationFilter` (JWT multi-issuer vía JWKS con caché Redis). Login de platform_user pendiente.
 
 ## Información encontrada
 
@@ -32,6 +32,22 @@ CREATE TABLE tenant_identity_provider (
 - Cada tenant usa su propio `issuer`, lo que permite validar JWTs de múltiples fuentes
 
 **Librería JWT:** se usa `jjwt-api` + `jjwt-impl` (sin `jjwt-jackson`, que arrastraría Jackson 2 y rompería la persistencia JSON de Hibernate — ver ADR-0007). La serialización JSON se hace con un codec propio sobre Jackson 3: `JwtJackson3Serializer` / `JwtJackson3Deserializer` (`infrastructure.security.jwt`). Toda construcción/parseo de JWT debe registrarlo: `Jwts.builder().serializeToJsonWith(serializer)` y `Jwts.parser().deserializeJsonWith(deserializer)`.
+
+### Validación de JWTs por request (`JwtAuthenticationFilter`)
+
+`infrastructure/security/jwt/JwtAuthenticationFilter` (`OncePerRequestFilter`, registrado después del filtro de API key y antes de `UsernamePasswordAuthenticationFilter`):
+
+- Solo procesa tokens `Authorization: Bearer` que **no** empiecen con `mv_live_` (esos son API keys). Si el request ya está autenticado (key SERVICE), no hace nada.
+- `MultiIssuerJwtDecoder.authenticate`:
+  1. Lee los claims `iss` y el header `kid`/`alg`.
+  2. Busca el provider por issuer (`findByIssuerAndIsActiveTrue`); sin fila → JWT inválido.
+  3. Valida `alg` contra `allowed_algorithms` del provider.
+  4. Obtiene el JWKS del issuer (`JwksProvider`, cacheado 10 min en Redis) y arma la clave RSA desde `n`/`e` del JWK.
+  5. Verifica la firma con `Jwts.parser().verifyWith(publicKey)`. Si la firma falla, se hace `evict` del JWKS cacheado y se reintenta una vez (soporta key rotation del IdP).
+  6. Valida `aud` contra el audience configurado y la expiración (con `clock_skew_seconds` del provider).
+- JWT válido → upsert de `tenant_member` (`TenantMemberService.upsert`: crea o actualiza `display_name`, `email`, `last_seen_at`) y autentica con principal `TenantUserPrincipal(memberId, tenantId, subject)`.
+- STANDARD key presente + JWT del **mismo tenant** → se combinan: authorities = scopes de la key (`SCOPE_<scope>`) y principal = miembro. Si los tenants difieren → no autentica.
+- JWT inválido → `SecurityContextHolder.clearContext()` → `401` (`RestAuthenticationEntryPoint` con `ErrorResponse` JSON).
 
 ### Mecanismo 2: API Keys (api_key)
 
@@ -64,11 +80,11 @@ CREATE TABLE api_key (
 
 `infrastructure/security/apikey/ApiKeyAuthenticationFilter` (`OncePerRequestFilter`, registrado antes de `UsernamePasswordAuthenticationFilter`) valida la key en cada request:
 
-- Header: `Authorization: Bearer <api-key>`. Se distingue de un JWT porque la key empieza con el prefijo `mv_live_`; cualquier otro token (ej. `eyJ...`) se deja pasar para el futuro filtro JWT.
-- Se hashea la raw (SHA-256, `ApiKeyHasher`) y se busca con `findByKeyHashAndRevokedAtIsNull` (usa el índice único parcial).
+- Header: `Authorization: Bearer <api-key>`. Se distingue de un JWT porque la key empieza con el prefijo `mv_live_`; cualquier otro token (ej. `eyJ...`) se deja pasar para el filtro JWT (`JwtAuthenticationFilter`). También acepta el header `X-API-Key`.
+- Se hashea la raw (SHA-256, `ApiKeyHasher`) y se busca con `findByKeyHashAndRevokedAtIsNull` (usa el índice único parcial), con caché en Redis (`@Cacheable("apiKeys")`, TTL 5 min, key = hash).
 - Key desconocida, revocada (`revoked_at`) o expirada (`expires_at` pasado) → no autentica → `401` (`RestAuthenticationEntryPoint` responde con `ErrorResponse` JSON).
 - `SERVICE` válida → autentica el request. Principal = `ApiKeyPrincipal(keyId, tenantId, name, keyType)`; authorities = scopes mapeados a `SCOPE_<scope>`. Actualiza `last_used_at` de forma asíncrona (`ApiKeyUsageRecorder` con `@Async`/`@EnableAsync`, `AsyncConfig`).
-- `STANDARD` válida → se valida pero **no autentica sola**: exige JWT además (filtro JWT pendiente). Sin JWT → `401`.
+- `STANDARD` válida → **no autentica sola**: expone la key en el request (`STANDARD_API_KEY_ATTR`) y el filtro JWT exige además un JWT del **mismo tenant**. Sin JWT → `401`; con JWT → scopes de la key limitan los del miembro (authorities `SCOPE_<scope>` combinadas).
 
 El hash se extrajo a `apikey/service/ApiKeyHasher` (reutilizado por `ApiKeyService` y el filtro).
 
@@ -112,18 +128,18 @@ CREATE TABLE tenant_member (
 ## Pendientes
 
 - [x] Configurar Spring Security con `SecurityFilterChain` (`SecurityConfig`: CSRF off, stateless, `POST /tenants` público, resto autenticado)
-- [ ] Implementar `JwtDecoder` multi-issuer que use `tenant_identity_provider` para obtener claves públicas
+- [x] Implementar `JwtDecoder` multi-issuer que use `tenant_identity_provider` para obtener claves públicas
 - [x] Implementar `ApiKeyFilter` para autenticación vía API keys
 - [ ] Implementar `PlatformUserAuthenticationProvider` para login de staff
 - [ ] Implementar servicio de creación/rotación de API keys
-- [ ] Implementar `TenantMemberService` para upsert de miembros
+- [x] Implementar `TenantMemberService` para upsert de miembros
 - [ ] Agregar endpoint de login para platform_user
 - [ ] Agregar endpoint de refresh de API keys
 - [x] Implementar creación de API keys (key inicial del admin en onboarding); rotación pendiente
 
 ## Preguntas abiertas
 
-- ¿Los JWTs se validan contra el JWKS URI en cada request o se cachean las claves?
+- ¿Los JWTs se validan contra el JWKS URI en cada request o se cachean las claves? → **Resuelto:** el JWKS se cachea en Redis (TTL 10 min) y se re-descarga al fallar la firma (evict + retry, soporta key rotation)
 - ¿Cómo se distingue si un request usa JWT vs API Key? → **Resuelto:** por prefijo `mv_live_` en el token Bearer (`ApiKeyAuthenticationFilter`)
 - ¿Los SERVICE keys requieren algún tipo de rate limiting diferente?
 - ¿Cómo se maneja la expiración de sesiones de platform_user?

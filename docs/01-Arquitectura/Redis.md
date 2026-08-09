@@ -33,13 +33,21 @@ Sin contraseña en local; si se agrega auth, usar `spring.data.redis.password` (
 
 Los `spring.cache.redis.*` de Boot no aplican: al definir un `RedisCacheManager` propio, la configuración (incluido el TTL) vive en `RedisCacheConfig`.
 
+### Caches activos
+
+| Cache | Clave | Valor | TTL | Usado por |
+|---|---|---|---|---|
+| `apiKeys` | hash SHA-256 de la raw key | `ApiKeyIdentity` | 5 min | `ApiKeyAuthenticator.findValidByHash` |
+| `jwks` | `jwks_uri` del provider | `List<JwkEntry>` | 10 min | `JwksProvider.fetch` (con `evict` manual al fallar la firma) |
+
+Los valores cacheables son records serializables con Jackson 3; se evita `Instant`/`Optional` en favor de tipos planos (ej. `long expiresAtEpochSecond` en `ApiKeyIdentity`).
+
 ### Tests
 
 `BaseIntegrationTest` levanta Redis con Testcontainers (`GenericContainer` imagen `redis:7-alpine` + `@ServiceConnection`), igual que PostgreSQL. `RedisConnectionTest` verifica set/get reales. Requiere Docker.
 
 ## Posibles usos futuros
 
-- **Caché de JWKS keys:** Cachear las claves públicas obtenidas de los JWKS URIs de cada tenant
 - **Rate limiting:** Almacenar contadores de requests por tenant/API key
 - **Sesiones:** Almacenar sesiones de platform_user
 - **Colas de tareas:** Procesamiento asíncrono de subida de documentos, generación de thumbnails, etc.
@@ -50,8 +58,8 @@ Los `spring.cache.redis.*` de Boot no aplican: al definir un `RedisCacheManager`
 - [x] Agregar `spring-boot-starter-data-redis` y `spring-boot-starter-cache` a `pom.xml`
 - [x] Configurar conexión Redis en `application.yaml`
 - [x] Definir `RedisCacheManager` con serialización Jackson 3 y TTL base
-- [ ] Aplicar caché a casos reales (JWKS keys, rate limiting) con `@Cacheable` y caches nombrados
-- [ ] Definir política de expiración por caché (TTLs específicos, eviction) cuando existan usos concretos
+- [x] Aplicar caché a casos reales (JWKS keys, API keys) con `@Cacheable` y caches nombrados
+- [x] Definir política de expiración por caché (TTLs específicos por caché)
 
 ## Preguntas abiertas
 

@@ -20,7 +20,7 @@ Punto de entrada único. Lee este archivo primero, luego los documentos relevant
 | [MultiTenant](01-Arquitectura/MultiTenant.md) | Cuando trabajes con aislamiento de datos, aprovisionamiento de tenants |
 | [Autenticacion](01-Arquitectura/Autenticacion.md) | Cuando implementes auth: OIDC, API keys, platform users |
 | [Storage](01-Arquitectura/Storage.md) | Cuando trabajes con subida/descarga de documentos, S3/MinIO |
-| [Redis](01-Arquitectura/Redis.md) | Placeholder — caching futuro |
+| [Redis](01-Arquitectura/Redis.md) | Cuando trabajes con caching (JWKS, API keys), sesiones o rate limiting |
 | [Seguridad](01-Arquitectura/Seguridad.md) | Cuando implementes controles de seguridad, auditoría |
 
 ## 02-Backend
