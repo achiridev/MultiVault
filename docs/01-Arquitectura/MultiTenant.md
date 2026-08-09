@@ -69,7 +69,7 @@ Límite de 63 caracteres (límite de identificadores PostgreSQL).
 - [ ] Implementar `TenantConnectionProvider` o `MultiTenantConnectionProvider` para Hibernate
 - [x] Implementar servicio de aprovisionamiento de nuevos tenants (crear schema, ejecutar tenant_schema.sql) — ADR-0004
 - [ ] Implementar lógica de suspensión/cancelación de tenants
-- [x] Agregar migraciones Flyway para schemas de tenant — `db/tenant/V1__tenant_schema.sql`
+- [x] Agregar migraciones Flyway para schemas de tenant — `db/tenant/V1__tenant_schema.sql`, `db/tenant/V2__fix_document_owner_permission_trigger.sql`
 
 ## Preguntas abiertas
 

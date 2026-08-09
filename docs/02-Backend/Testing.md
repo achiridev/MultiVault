@@ -6,59 +6,58 @@ Documentar la estrategia de testing del proyecto, herramientas y cobertura.
 
 ## Estado actual
 
-Existe un único test: `MultivaultApplicationTests.java` que verifica que el contexto de Spring Boot carga correctamente. No hay tests unitarios, de integración ni funcionales.
+Tests de integración con **Testcontainers + PostgreSQL real** (postgres:16-alpine) en un contenedor compartido, más tests unitarios con Mockito. Todos corren con `mvn test` (requiere Docker corriendo).
 
-## Información encontrada
+### Tests existentes
 
-### Dependencias de test en pom.xml
+| Test | Tipo | Cubre |
+|---|---|---|
+| `MultivaultApplicationTests` | Integración | Contexto Spring carga contra PostgreSQL de Testcontainers |
+| `TenantProvisioningTest` | Integración | Onboarding completo: tenant ACTIVE, schema creado, api key, audit, idempotencia, trigger owner permission, validaciones |
+| `AuditEventPublishingTest` | Integración | Auditoría AFTER_COMMIT (persiste en commit, no en rollback) |
+| `ApiKeyServiceTest` | Unitario | Generación de api key (raw mostrada una vez, solo hash almacenado) |
+| `audit/*` | Unitario | Eventos, publisher, listener, modelo de auditoría |
+
+## Infraestructura de test
+
+### Dependencias (pom.xml)
 
 | Dependencia | Propósito |
 |---|---|
-| `spring-boot-starter-data-jpa-test` | Test slices para JPA (DataJpaTest) |
-| `spring-boot-starter-security-test` | Test utilities para seguridad (MockMvc + Security) |
-| `spring-boot-starter-validation-test` | Test slices para validación |
-| `spring-boot-starter-webmvc-test` | Test slices para controladores (WebMvcTest) |
+| `spring-boot-testcontainers` | `@ServiceConnection` para conectar la app al contenedor |
+| `org.testcontainers:postgresql` | Contenedor PostgreSQL |
+| `org.testcontainers:junit-jupiter` | Integración con JUnit 5 |
+| `spring-boot-starter-data-jpa-test`, `-security-test`, `-validation-test`, `-webmvc-test` | Test slices |
 
-### Test existente
+Versiones de Testcontainers vía `testcontainers-bom` (`testcontainers.version` en pom.xml).
 
-```java
-@SpringBootTest
-class MultivaultApplicationTests {
-    @Test
-    void contextLoads() {
-    }
-}
+### Clase base: `BaseIntegrationTest`
+
+- `src/test/java/dev/achiri/multivault/support/BaseIntegrationTest.java`
+- `@SpringBootTest` + `@ActiveProfiles("test")` + `@ServiceConnection` sobre un `PostgreSQLContainer` **estático**.
+- El contenedor se inicia manualmente en un bloque `static` (no con la extensión `@Testcontainers`): así **un solo contenedor** es compartido por toda la suite y no se detiene entre clases (la extensión lo paraba tras la primera clase y rompía las siguientes).
+- `@ServiceConnection` hace que la autoconfiguración del DataSource use el contenedor **ignorando** `spring.datasource.url` y las env vars (`DB_URL`, etc.). El Flyway de `public` y el provisioner de schema por tenant operan contra el contenedor.
+
+### Configuración
+
+- `src/test/resources/application-test.yaml` — perfil `test` (datasource por defecto para resolver placeholders; el valor real lo aporta `@ServiceConnection`).
+- `src/test/resources/docker-java.properties` — `api.version=1.44`: requerido porque docker-java de Testcontainers 1.21.x negocia API 1.32 y **Docker Engine ≥ 25 exige API ≥ 1.44** (ver ADR-0005).
+
+## Correr tests
+
+```sh
+mvn test
 ```
 
-### Framework de testing
-
-- **JUnit 5** (incluido por defecto en Spring Boot starters)
-- **Mockito** (incluido por defecto)
-- **AssertJ** (incluido por defecto)
-- No hay Testcontainers ni H2 configurados
-
-### Tipo de tests previstos (por implementar)
-
-| Tipo | Anotación | Propósito |
-|---|---|---|
-| Unitarios | `@ExtendWith(MockitoExtension.class)` | Servicios, validación de reglas |
-| JPA Slice | `@DataJpaTest` | Repositorios, queries |
-| MVC Slice | `@WebMvcTest` | Controladores, serialización |
-| Integración | `@SpringBootTest` | Flujos completos, multi-tenancy |
-| Seguridad | `@WebMvcTest` + `@WithMockUser` | Autenticación, autorización |
+Docker debe estar corriendo. Los tests crean y destruyen sus datos (schemas de tenant con `DROP SCHEMA ... CASCADE` en `@AfterEach`).
 
 ## Pendientes
 
-- [ ] Configurar test database (H2 en memoria o Testcontainers con PostgreSQL)
-- [ ] Crear tests unitarios para servicios
-- [ ] Crear tests de integración para repositorios
-- [ ] Crear tests de controladores con MockMvc
 - [ ] Configurar cobertura con JaCoCo
-- [ ] Crear archivo de configuración `application-test.yaml`
+- [ ] Tests de controladores con MockMvc (solo validación de body en `TenantProvisioningTest`)
 - [ ] Implementar tests de seguridad (autenticación, autorización)
 
 ## Preguntas abiertas
 
-- ¿Se usará Testcontainers para tener PostgreSQL real en tests o H2 con modo PostgreSQL?
 - ¿Límite de cobertura deseado?
-- ¿Se requiere integración continua con tests automatizados?
+- ¿Se requiere CI con Docker + Testcontainers?
