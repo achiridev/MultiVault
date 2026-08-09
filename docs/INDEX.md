@@ -56,6 +56,7 @@ Punto de entrada único. Lee este archivo primero, luego los documentos relevant
 | [ADR-0004](06-Decisiones/ADR-0004.md) | Aprovisionamiento de schema por tenant con Flyway programático |
 | [ADR-0005](06-Decisiones/ADR-0005.md) | Testcontainers para tests de integración |
 | [ADR-0006](06-Decisiones/ADR-0006.md) | `tenant_identity_provider` obligatorio en la creación de tenant |
+| [ADR-0007](06-Decisiones/ADR-0007.md) | JJWT con codec JSON Jackson 3 propio (sin `jjwt-jackson`) |
 
 ## 99-Templates
 
