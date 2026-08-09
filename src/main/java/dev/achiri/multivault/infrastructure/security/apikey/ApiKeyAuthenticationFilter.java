@@ -1,8 +1,6 @@
 package dev.achiri.multivault.infrastructure.security.apikey;
 
-import dev.achiri.multivault.apikey.model.ApiKey;
 import dev.achiri.multivault.apikey.model.ApiKeyType;
-import dev.achiri.multivault.apikey.repository.ApiKeyRepository;
 import dev.achiri.multivault.apikey.service.ApiKeyHasher;
 import dev.achiri.multivault.apikey.service.ApiKeyUsageRecorder;
 import jakarta.servlet.FilterChain;
@@ -18,18 +16,19 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
-import java.time.Instant;
 import java.util.List;
-import java.util.Optional;
 
 @Component
 @RequiredArgsConstructor
 public class ApiKeyAuthenticationFilter extends OncePerRequestFilter {
 
+    public static final String STANDARD_API_KEY_ATTR = ApiKeyAuthenticationFilter.class.getName() + ".STANDARD";
+
     private static final String KEY_PREFIX_LABEL = "mv_live_";
     private static final String BEARER_PREFIX = "Bearer ";
+    private static final String API_KEY_HEADER = "X-API-Key";
 
-    private final ApiKeyRepository apiKeyRepository;
+    private final ApiKeyAuthenticator apiKeyAuthenticator;
     private final ApiKeyHasher apiKeyHasher;
     private final ApiKeyUsageRecorder apiKeyUsageRecorder;
 
@@ -39,39 +38,27 @@ public class ApiKeyAuthenticationFilter extends OncePerRequestFilter {
             HttpServletResponse response,
             FilterChain filterChain) throws ServletException, IOException {
 
-        String authorization = request.getHeader("Authorization");
-        if (authorization == null || !authorization.startsWith(BEARER_PREFIX)) {
+        ApiKeyIdentity key = resolveApiKey(request);
+        if (key == null) {
             filterChain.doFilter(request, response);
             return;
         }
 
-        String token = authorization.substring(BEARER_PREFIX.length()).trim();
-        if (!token.startsWith(KEY_PREFIX_LABEL)) {
+        if (key.isExpired()) {
             filterChain.doFilter(request, response);
             return;
         }
 
-        Optional<ApiKey> apiKey = apiKeyRepository.findByKeyHashAndRevokedAtIsNull(apiKeyHasher.sha256Hex(token));
-        if (apiKey.isEmpty()) {
+        if (key.keyType() == ApiKeyType.STANDARD) {
+            request.setAttribute(STANDARD_API_KEY_ATTR, key);
             filterChain.doFilter(request, response);
             return;
         }
 
-        ApiKey key = apiKey.get();
-        if (key.getExpiresAt() != null && key.getExpiresAt().isBefore(Instant.now())) {
-            filterChain.doFilter(request, response);
-            return;
-        }
+        apiKeyUsageRecorder.recordUsage(key.keyId());
 
-        if (key.getKeyType() == ApiKeyType.STANDARD) {
-            filterChain.doFilter(request, response);
-            return;
-        }
-
-        apiKeyUsageRecorder.recordUsage(key.getId());
-
-        ApiKeyPrincipal principal = new ApiKeyPrincipal(key.getId(), key.getTenantId(), key.getName(), key.getKeyType());
-        List<SimpleGrantedAuthority> authorities = key.getScopes().stream()
+        ApiKeyPrincipal principal = new ApiKeyPrincipal(key.keyId(), key.tenantId(), key.name(), key.keyType());
+        List<SimpleGrantedAuthority> authorities = key.scopes().stream()
                 .map(scope -> new SimpleGrantedAuthority("SCOPE_" + scope))
                 .toList();
 
@@ -81,5 +68,23 @@ public class ApiKeyAuthenticationFilter extends OncePerRequestFilter {
         SecurityContextHolder.getContext().setAuthentication(authentication);
 
         filterChain.doFilter(request, response);
+    }
+
+    private ApiKeyIdentity resolveApiKey(HttpServletRequest request) {
+        String token = null;
+        String authorization = request.getHeader("Authorization");
+        if (authorization != null && authorization.startsWith(BEARER_PREFIX)) {
+            token = authorization.substring(BEARER_PREFIX.length()).trim();
+        }
+        if (token == null || !token.startsWith(KEY_PREFIX_LABEL)) {
+            String apiKeyHeader = request.getHeader(API_KEY_HEADER);
+            if (apiKeyHeader != null && apiKeyHeader.startsWith(KEY_PREFIX_LABEL)) {
+                token = apiKeyHeader.trim();
+            }
+        }
+        if (token == null || !token.startsWith(KEY_PREFIX_LABEL)) {
+            return null;
+        }
+        return apiKeyAuthenticator.findValidByHash(apiKeyHasher.sha256Hex(token));
     }
 }

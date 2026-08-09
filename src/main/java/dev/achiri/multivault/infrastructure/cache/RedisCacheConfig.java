@@ -13,6 +13,8 @@ import org.springframework.data.redis.serializer.RedisSerializer;
 import tools.jackson.databind.jsontype.BasicPolymorphicTypeValidator;
 
 import java.time.Duration;
+import java.util.HashMap;
+import java.util.Map;
 
 @Configuration
 @EnableCaching
@@ -38,8 +40,13 @@ public class RedisCacheConfig {
                 .serializeKeysWith(RedisSerializationContext.SerializationPair.fromSerializer(RedisSerializer.string()))
                 .serializeValuesWith(RedisSerializationContext.SerializationPair.fromSerializer(valueSerializer));
 
+        Map<String, RedisCacheConfiguration> cacheConfigurations = new HashMap<>();
+        cacheConfigurations.put("apiKeys", cacheConfiguration.entryTtl(Duration.ofMinutes(5)));
+        cacheConfigurations.put("jwks", cacheConfiguration.entryTtl(Duration.ofMinutes(10)));
+
         return RedisCacheManager.builder(connectionFactory)
                 .cacheDefaults(cacheConfiguration)
+                .withInitialCacheConfigurations(cacheConfigurations)
                 .build();
     }
 }
