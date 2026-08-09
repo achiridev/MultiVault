@@ -57,6 +57,7 @@ Punto de entrada único. Lee este archivo primero, luego los documentos relevant
 | [ADR-0005](06-Decisiones/ADR-0005.md) | Testcontainers para tests de integración |
 | [ADR-0006](06-Decisiones/ADR-0006.md) | `tenant_identity_provider` obligatorio en la creación de tenant |
 | [ADR-0007](06-Decisiones/ADR-0007.md) | JJWT con codec JSON Jackson 3 propio (sin `jjwt-jackson`) |
+| [ADR-0008](06-Decisiones/ADR-0008.md) | Conexión Redis local y Spring Cache con serialización Jackson 3 |
 
 ## 99-Templates
 

@@ -21,6 +21,7 @@ La arquitectura está definida a nivel de esquema de base de datos y stack tecno
 | Validación | Spring Validation (Jakarta Validation) |
 | API | Spring Web MVC (Servlet, no WebFlux) |
 | Base de datos | PostgreSQL con extensión `pgcrypto` |
+| Caché | Redis (valkey 9.1.1 local) + Spring Cache (`@EnableCaching`, `RedisCacheManager` — ADR-0008) |
 | Migraciones | Flyway (schema público `db/migration`; por tenant vía instancia programática `db/tenant` — ADR-0004) |
 | Build | Maven 3.9.16 + Maven Wrapper |
 | Procesamiento | Lombok (annotation processor) |
