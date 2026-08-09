@@ -20,6 +20,7 @@ public record CreateTenantRequest(
         @Valid
         TenantAdminDto admin,
 
+        @NotNull
         @Valid
         TenantIdentityProviderDto identityProvider
 ) {
