@@ -13,6 +13,7 @@ import dev.achiri.multivault.support.BaseIntegrationTest;
 import dev.achiri.multivault.tenant.dto.CreateTenantRequest;
 import dev.achiri.multivault.tenant.dto.CreateTenantResponse;
 import dev.achiri.multivault.tenant.model.Tenant;
+import dev.achiri.multivault.tenant.model.TenantIdentityProvider;
 import dev.achiri.multivault.tenant.model.TenantStatus;
 import dev.achiri.multivault.tenant.repository.TenantIdentityProviderRepository;
 import dev.achiri.multivault.tenant.repository.TenantMemberRepository;
@@ -38,6 +39,7 @@ import static org.mockito.Mockito.doThrow;
 import static org.springframework.http.MediaType.APPLICATION_JSON;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 @AutoConfigureMockMvc
@@ -208,18 +210,24 @@ class TenantProvisioningTest extends BaseIntegrationTest {
     }
 
     @Test
-    void createsTenantWithoutIdentityProvider() {
+    @WithMockUser
+    void rejectsTenantWithoutIdentityProvider() throws Exception {
         Plan plan = activePlan();
 
-        CreateTenantResponse response = tenantService.create(
-                request("Acme No Identity Provider", plan.getId(), "sub_2", "admin2@acme.com", null));
-
-        tenantId = response.tenant().id();
-        schemaName = response.tenant().schemaName();
-
-        assertThat(response.identityProvider()).isNull();
-        assertThat(response.tenant().status()).isEqualTo(TenantStatus.ACTIVE);
-        assertThat(tenantIdentityProviderRepository.findById(tenantId)).isEmpty();
+        mockMvc.perform(post("/api/v1/tenants")
+                        .with(csrf())
+                        .contentType(APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "name": "Acme No Identity Provider",
+                                  "planId": "%s",
+                                  "admin": {
+                                    "subject": "sub_2",
+                                    "email": "admin2@acme.com"
+                                  }
+                                }
+                                """.formatted(plan.getId())))
+                .andExpect(status().isBadRequest());
     }
 
     @Test
@@ -302,6 +310,75 @@ class TenantProvisioningTest extends BaseIntegrationTest {
                                     "subject": "",
                                     "email": "not-an-email"
                                   }
+                                }
+                                """))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    @WithMockUser
+    void updatesTenantIdentityProvider() throws Exception {
+        Plan plan = activePlan();
+
+        CreateTenantResponse response = tenantService.create(
+                request("Acme Update IdP", plan.getId(), "sub_11", "admin11@acme.com", identityProvider()));
+        tenantId = response.tenant().id();
+        schemaName = response.tenant().schemaName();
+
+        mockMvc.perform(put("/api/v1/tenants/{tenantId}/identity-provider", tenantId)
+                        .with(csrf())
+                        .contentType(APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "issuer": "https://idp.acme.com/v2",
+                                  "jwksUri": "https://idp.acme.com/v2/.well-known/jwks.json",
+                                  "audience": "https://api.acme.com",
+                                  "allowedAlgorithms": ["RS256"],
+                                  "clockSkewSeconds": 120
+                                }
+                                """))
+                .andExpect(status().isOk());
+
+        TenantIdentityProvider stored = tenantIdentityProviderRepository.findById(tenantId).orElseThrow();
+        assertThat(stored.getIssuer()).isEqualTo("https://idp.acme.com/v2");
+        assertThat(stored.getJwksUri()).isEqualTo("https://idp.acme.com/v2/.well-known/jwks.json");
+        assertThat(stored.getClockSkewSeconds()).isEqualTo(120);
+    }
+
+    @Test
+    @WithMockUser
+    void rejectsIdentityProviderForUnknownTenant() throws Exception {
+        mockMvc.perform(put("/api/v1/tenants/{tenantId}/identity-provider", UUID.randomUUID())
+                        .with(csrf())
+                        .contentType(APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "issuer": "https://idp.acme.com",
+                                  "jwksUri": "https://idp.acme.com/.well-known/jwks.json",
+                                  "audience": "https://api.acme.com"
+                                }
+                                """))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
+    @WithMockUser
+    void rejectsInvalidIdentityProviderBody() throws Exception {
+        Plan plan = activePlan();
+
+        CreateTenantResponse response = tenantService.create(
+                request("Acme Invalid IdP", plan.getId(), "sub_12", "admin12@acme.com", identityProvider()));
+        tenantId = response.tenant().id();
+        schemaName = response.tenant().schemaName();
+
+        mockMvc.perform(put("/api/v1/tenants/{tenantId}/identity-provider", tenantId)
+                        .with(csrf())
+                        .contentType(APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "issuer": "",
+                                  "jwksUri": "https://idp.acme.com/.well-known/jwks.json",
+                                  "audience": "https://api.acme.com"
                                 }
                                 """))
                 .andExpect(status().isBadRequest());
