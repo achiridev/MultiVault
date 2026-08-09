@@ -5,14 +5,13 @@ import dev.achiri.multivault.audit.event.AuditEventPublisher;
 import dev.achiri.multivault.audit.model.ActorType;
 import dev.achiri.multivault.audit.model.AuditLog;
 import dev.achiri.multivault.audit.repository.AuditLogRepository;
+import dev.achiri.multivault.support.BaseIntegrationTest;
 import dev.achiri.multivault.tenant.model.Tenant;
 import dev.achiri.multivault.tenant.repository.TenantRepository;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.test.context.ActiveProfiles;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
 
@@ -23,9 +22,7 @@ import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-@SpringBootTest
-@ActiveProfiles("local")
-class AuditEventPublishingTest {
+class AuditEventPublishingTest extends BaseIntegrationTest {
 
     @Autowired
     private AuditEventPublisher auditEventPublisher;
