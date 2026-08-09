@@ -60,6 +60,18 @@ CREATE TABLE api_key (
 - Índice único parcial sobre `key_hash WHERE revoked_at IS NULL`
 - Al crear un tenant, el onboarding genera automáticamente la **API key inicial del admin** (`ApiKeyService.createInitial`): raw `mv_live_` + 40 hex, `key_prefix` = primeros 12 chars, hash SHA-256, `key_type = STANDARD`, `created_by_user_id = tenant_member.id` del admin. La raw se devuelve una sola vez en la respuesta de `POST /api/v1/tenants`
 
+### Validación de API keys por request (`ApiKeyAuthenticationFilter`)
+
+`infrastructure/security/apikey/ApiKeyAuthenticationFilter` (`OncePerRequestFilter`, registrado antes de `UsernamePasswordAuthenticationFilter`) valida la key en cada request:
+
+- Header: `Authorization: Bearer <api-key>`. Se distingue de un JWT porque la key empieza con el prefijo `mv_live_`; cualquier otro token (ej. `eyJ...`) se deja pasar para el futuro filtro JWT.
+- Se hashea la raw (SHA-256, `ApiKeyHasher`) y se busca con `findByKeyHashAndRevokedAtIsNull` (usa el índice único parcial).
+- Key desconocida, revocada (`revoked_at`) o expirada (`expires_at` pasado) → no autentica → `401` (`RestAuthenticationEntryPoint` responde con `ErrorResponse` JSON).
+- `SERVICE` válida → autentica el request. Principal = `ApiKeyPrincipal(keyId, tenantId, name, keyType)`; authorities = scopes mapeados a `SCOPE_<scope>`. Actualiza `last_used_at` de forma asíncrona (`ApiKeyUsageRecorder` con `@Async`/`@EnableAsync`, `AsyncConfig`).
+- `STANDARD` válida → se valida pero **no autentica sola**: exige JWT además (filtro JWT pendiente). Sin JWT → `401`.
+
+El hash se extrajo a `apikey/service/ApiKeyHasher` (reutilizado por `ApiKeyService` y el filtro).
+
 ### Mecanismo 3: Platform User (platform_user)
 
 Para el staff interno que administra MultiVault.
@@ -101,17 +113,17 @@ CREATE TABLE tenant_member (
 
 - [x] Configurar Spring Security con `SecurityFilterChain` (`SecurityConfig`: CSRF off, stateless, `POST /tenants` público, resto autenticado)
 - [ ] Implementar `JwtDecoder` multi-issuer que use `tenant_identity_provider` para obtener claves públicas
-- [ ] Implementar `ApiKeyFilter` para autenticación vía API keys
+- [x] Implementar `ApiKeyFilter` para autenticación vía API keys
 - [ ] Implementar `PlatformUserAuthenticationProvider` para login de staff
 - [ ] Implementar servicio de creación/rotación de API keys
 - [ ] Implementar `TenantMemberService` para upsert de miembros
 - [ ] Agregar endpoint de login para platform_user
 - [ ] Agregar endpoint de refresh de API keys
-- [x] Implementar creación de API keys (key inicial del admin en onboarding); rotación/validación pendientes
+- [x] Implementar creación de API keys (key inicial del admin en onboarding); rotación pendiente
 
 ## Preguntas abiertas
 
 - ¿Los JWTs se validan contra el JWKS URI en cada request o se cachean las claves?
-- ¿Cómo se distingue si un request usa JWT vs API Key?
+- ¿Cómo se distingue si un request usa JWT vs API Key? → **Resuelto:** por prefijo `mv_live_` en el token Bearer (`ApiKeyAuthenticationFilter`)
 - ¿Los SERVICE keys requieren algún tipo de rate limiting diferente?
 - ¿Cómo se maneja la expiración de sesiones de platform_user?

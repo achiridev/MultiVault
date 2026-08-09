@@ -43,6 +43,16 @@ Response `201 Created`:
 
 `apiKey.key` es la key raw y se devuelve **una única vez**; solo el hash (`key_hash`) se almacena en BD.
 
+## Autenticación
+
+Todos los endpoints excepto `POST /api/v1/tenants` requieren autenticación. Para integraciones M2M, la API key se envía como:
+
+```
+Authorization: Bearer mv_live_...
+```
+
+`ApiKeyAuthenticationFilter` distingue la key del JWT por el prefijo `mv_live_`. Solo las keys `SERVICE` autentican por sí solas; las `STANDARD` exigen además un JWT (pendiente). Key inválida/revocada/expirada o falta de credenciales → `401` con `ErrorResponse` JSON.
+
 ### PUT `/api/v1/tenants/{tenantId}/identity-provider` — Actualizar identity provider (implementado)
 
 Actualiza (upsert) la configuración OIDC/JWT del tenant. `404` si el tenant no existe; `400` con body inválido; `200` con el DTO actualizado. Registra auditoría `TENANT_IDENTITY_PROVIDER_UPDATED`.

@@ -3,6 +3,7 @@ package dev.achiri.multivault.apikey;
 import dev.achiri.multivault.apikey.model.ApiKey;
 import dev.achiri.multivault.apikey.model.ApiKeyType;
 import dev.achiri.multivault.apikey.repository.ApiKeyRepository;
+import dev.achiri.multivault.apikey.service.ApiKeyHasher;
 import dev.achiri.multivault.apikey.service.ApiKeyResult;
 import dev.achiri.multivault.apikey.service.ApiKeyService;
 import org.junit.jupiter.api.Test;
@@ -20,6 +21,7 @@ import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -29,6 +31,9 @@ class ApiKeyServiceTest {
     @Mock
     private ApiKeyRepository apiKeyRepository;
 
+    @Mock
+    private ApiKeyHasher apiKeyHasher;
+
     @InjectMocks
     private ApiKeyService apiKeyService;
 
@@ -36,6 +41,8 @@ class ApiKeyServiceTest {
     void generatesRawKeyShownOnceAndStoresOnlyHash() {
         UUID tenantId = UUID.randomUUID();
         UUID memberId = UUID.randomUUID();
+        when(apiKeyHasher.sha256Hex(anyString())).thenAnswer(invocation ->
+                sha256Hex(invocation.getArgument(0)));
         when(apiKeyRepository.save(any(ApiKey.class))).thenAnswer(invocation -> {
             ApiKey key = invocation.getArgument(0);
             key.setId(UUID.randomUUID());

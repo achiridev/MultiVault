@@ -16,6 +16,7 @@ Tests de integración con **Testcontainers + PostgreSQL real** (postgres:16-alpi
 | `TenantProvisioningTest` | Integración | Onboarding completo: tenant ACTIVE, schema creado, api key, audit, idempotencia, trigger owner permission, validaciones |
 | `AuditEventPublishingTest` | Integración | Auditoría AFTER_COMMIT (persiste en commit, no en rollback) |
 | `ApiKeyServiceTest` | Unitario | Generación de api key (raw mostrada una vez, solo hash almacenado) |
+| `ApiKeyFilterIntegrationTest` | Integración | Autenticación por API key: `SERVICE` autentica, `STANDARD` sin JWT/revocada/expirada/desconocida/JWT-like → 401 |
 | `audit/*` | Unitario | Eventos, publisher, listener, modelo de auditoría |
 
 ## Infraestructura de test
@@ -55,7 +56,7 @@ Docker debe estar corriendo. Los tests crean y destruyen sus datos (schemas de t
 
 - [ ] Configurar cobertura con JaCoCo
 - [ ] Tests de controladores con MockMvc (por ahora validación de body y `PUT /tenants/{id}/identity-provider` en `TenantProvisioningTest`)
-- [ ] Implementar tests de seguridad (autenticación, autorización)
+- [x] Implementar tests de seguridad (autenticación por API key en `ApiKeyFilterIntegrationTest`; autorización pendiente)
 
 ## Preguntas abiertas
 
