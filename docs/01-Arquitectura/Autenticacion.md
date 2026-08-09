@@ -27,7 +27,7 @@ CREATE TABLE tenant_identity_provider (
 );
 ```
 
-- Sin fila en esta tabla → ningún JWT de ese tenant puede validarse
+- Sin fila en esta tabla → ningún JWT de ese tenant puede validarse. Por eso es **obligatoria al crear el tenant** (`POST /api/v1/tenants` rechaza con 400 si falta) y se actualiza con `PUT /api/v1/tenants/{id}/identity-provider` (ADR-0006).
 - El algoritmo `'none'` está explícitamente prohibido
 - Cada tenant usa su propio `issuer`, lo que permite validar JWTs de múltiples fuentes
 

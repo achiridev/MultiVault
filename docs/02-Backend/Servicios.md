@@ -6,7 +6,7 @@ Documentar la capa de servicios de la aplicación, sus responsabilidades y depen
 
 ## Estado actual
 
-`TenantService.create` (orquestador, no transaccional) coordina el aprovisionamiento de organización en tres etapas (ADR-0004): `TenantProvisioningService.initialize` (TX 1: `tenant` PENDING_PROVISIONING + `subscription` ACTIVE + `tenant_usage` + `tenant_member` + `identity_provider` opcional), `TenantSchemaProvisioner.provision` (CREATE SCHEMA + Flyway por tenant, fuera de transacción) y `TenantProvisioningService.activate` (TX 2: tenant ACTIVE + `current_plan_id`, API key inicial del admin vía `ApiKeyService.createInitial`, auditoría `TENANT_CREATED`). El mapeo DTO ↔ Entidad lo generan mappers MapStruct (`tenant/mapper/`, `subscription/mapper/`) según ADR-0002. `ApiKeyService` genera la key raw (`mv_live_` + 40 hex), persiste solo su hash SHA-256 y la devuelve una única vez.
+`TenantService.create` (orquestador, no transaccional) coordina el aprovisionamiento de organización en tres etapas (ADR-0004): `TenantProvisioningService.initialize` (TX 1: `tenant` PENDING_PROVISIONING + `subscription` ACTIVE + `tenant_usage` + `tenant_member` + `identity_provider` obligatorio, ADR-0006), `TenantSchemaProvisioner.provision` (CREATE SCHEMA + Flyway por tenant, fuera de transacción) y `TenantProvisioningService.activate` (TX 2: tenant ACTIVE + `current_plan_id`, API key inicial del admin vía `ApiKeyService.createInitial`, auditoría `TENANT_CREATED`). `TenantService.updateIdentityProvider` actualiza la config OIDC vía `PUT /api/v1/tenants/{id}/identity-provider` (auditoría `TENANT_IDENTITY_PROVIDER_UPDATED`). El mapeo DTO ↔ Entidad lo generan mappers MapStruct (`tenant/mapper/`, `subscription/mapper/`) según ADR-0002. `ApiKeyService` genera la key raw (`mv_live_` + 40 hex), persiste solo su hash SHA-256 y la devuelve una única vez.
 
 ## Información encontrada
 
@@ -22,7 +22,7 @@ El diseño de los servicios se infiere de las entidades y la funcionalidad esper
 | `ApiKeyService` ✅ | Creación de API keys (generación raw + hash SHA-256); revocación/validación pendientes |
 | `SubscriptionService` | Gestión de suscripciones, cambio de plan, facturación |
 | `PlanService` | CRUD de planes (solo SUPER_ADMIN) |
-| `TenantIdentityProviderService` | CRUD de config OIDC por tenant |
+| `TenantIdentityProviderService` | CRUD de config OIDC por tenant — la actualización ya vive en `TenantService.updateIdentityProvider` |
 | `PlatformUserService` | CRUD de staff, login, cambio de contraseña |
 | `TenantMemberService` | Upsert de miembros desde JWT, activación/desactivación |
 | `FolderService` | CRUD carpetas, mover, path materializado |

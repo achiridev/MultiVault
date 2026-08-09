@@ -55,6 +55,7 @@ Punto de entrada único. Lee este archivo primero, luego los documentos relevant
 | [ADR-0003](06-Decisiones/ADR-0003.md) | Auditoría vía eventos de aplicación (AFTER_COMMIT) |
 | [ADR-0004](06-Decisiones/ADR-0004.md) | Aprovisionamiento de schema por tenant con Flyway programático |
 | [ADR-0005](06-Decisiones/ADR-0005.md) | Testcontainers para tests de integración |
+| [ADR-0006](06-Decisiones/ADR-0006.md) | `tenant_identity_provider` obligatorio en la creación de tenant |
 
 ## 99-Templates
 

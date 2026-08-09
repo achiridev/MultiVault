@@ -41,7 +41,7 @@ Cada tenant tiene un schema PostgreSQL propio. Las tablas compartidas viven en e
 
 Implementado en `POST /api/v1/tenants` (ADR-0004). Tres límites transaccionales:
 
-1. **TX 1** — `TenantProvisioningService.initialize`: inserta `tenant` con `status = 'PENDING_PROVISIONING'`, `subscription` (`ACTIVE`), `tenant_usage`, `tenant_member` (admin) e `identity_provider` (opcional). COMMIT.
+1. **TX 1** — `TenantProvisioningService.initialize`: inserta `tenant` con `status = 'PENDING_PROVISIONING'`, `subscription` (`ACTIVE`), `tenant_usage`, `tenant_member` (admin) e `identity_provider` (obligatorio, ADR-0006). COMMIT.
 2. **Fuera de transacción** — `TenantSchemaProvisioner.provision`: `CREATE SCHEMA <schema>;` + Flyway programático sobre `classpath:db/tenant` (historial `flyway_schema_history` dentro del schema del tenant).
    - Si falla → `markProvisioningFailed` (tenant `SUSPENDED` + `suspended_reason = 'schema_provisioning_failed'`) + `TenantProvisioningFailedEvent` (notifica al admin; canal log hoy) + error 500.
 3. **TX 2** — `TenantProvisioningService.activate`: tenant `status = 'ACTIVE'` + `current_plan_id`, creación de la API key inicial del admin (`ApiKeyService.createInitial`) y auditoría `TENANT_CREATED` (AFTER_COMMIT).

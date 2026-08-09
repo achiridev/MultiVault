@@ -54,7 +54,7 @@ Docker debe estar corriendo. Los tests crean y destruyen sus datos (schemas de t
 ## Pendientes
 
 - [ ] Configurar cobertura con JaCoCo
-- [ ] Tests de controladores con MockMvc (solo validación de body en `TenantProvisioningTest`)
+- [ ] Tests de controladores con MockMvc (por ahora validación de body y `PUT /tenants/{id}/identity-provider` en `TenantProvisioningTest`)
 - [ ] Implementar tests de seguridad (autenticación, autorización)
 
 ## Preguntas abiertas
