@@ -6,7 +6,7 @@ Documentar las consideraciones de seguridad del sistema, controles implementados
 
 ## Estado actual
 
-Existen controles de seguridad a nivel de base de datos (constraints, checks, índices parciales). No hay implementación de Spring Security ni configuración de seguridad en la capa de aplicación.
+Existen controles de seguridad a nivel de base de datos (constraints, checks, índices parciales). Spring Security está configurado en `infrastructure/security/config/SecurityConfig`: CSRF deshabilitado, sesiones `STATELESS`, `POST /api/v1/tenants` público (onboarding self-serve) y el resto de endpoints autenticados. Aún no hay mecanismo de autenticación real (JWT/API key/login): los endpoints protegidos solo son accesibles vía contexto de seguridad (ej. `@WithMockUser` en tests).
 
 ## Información encontrada
 
@@ -43,8 +43,9 @@ El paquete `dev.achiri.multivault.audit` implementa la auditoría con eventos de
 
 ## Pendientes
 
-- [ ] Configurar Spring Security con cadena de filtros
-- [ ] Implementar `SecurityFilterChain` con CORS, CSRF, rate limiting
+- [x] Configurar Spring Security con cadena de filtros (`SecurityConfig`)
+- [ ] Implementar `SecurityFilterChain` con CORS, rate limiting — CSRF ya deshabilitado (API stateless)
+- [ ] Implementar mecanismo de autenticación (JWT/API key/login) — hoy `anyRequest().authenticated()` sin provider
 - [ ] Definir `@PreAuthorize` / `@PostAuthorize` en los controladores
 - [ ] Implementar validación de scopes de API keys
 - [ ] Implementar rate limiting por tenant y por API key

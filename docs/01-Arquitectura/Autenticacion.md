@@ -99,7 +99,7 @@ CREATE TABLE tenant_member (
 
 ## Pendientes
 
-- [ ] Configurar Spring Security con `SecurityFilterChain`
+- [x] Configurar Spring Security con `SecurityFilterChain` (`SecurityConfig`: CSRF off, stateless, `POST /tenants` público, resto autenticado)
 - [ ] Implementar `JwtDecoder` multi-issuer que use `tenant_identity_provider` para obtener claves públicas
 - [ ] Implementar `ApiKeyFilter` para autenticación vía API keys
 - [ ] Implementar `PlatformUserAuthenticationProvider` para login de staff
