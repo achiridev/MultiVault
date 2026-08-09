@@ -31,7 +31,7 @@ CREATE TABLE tenant_identity_provider (
 - El algoritmo `'none'` está explícitamente prohibido
 - Cada tenant usa su propio `issuer`, lo que permite validar JWTs de múltiples fuentes
 
-**Librería JWT:** se usa `jjwt-api` + `jjwt-impl` (sin `jjwt-jackson`, que arrastraría Jackson 2 y rompería la persistencia JSON de Hibernate — ver ADR-0007). La serialización JSON se hace con un codec propio sobre Jackson 3: `JwtJackson3Serializer` / `JwtJackson3Deserializer` (`infrastructure.security.jwt`). Toda construcción/parseo de JWT debe registrarlo: `Jwts.builder().serializeToJsonWith(serializer)` y `Jwts.parser().deserializeJsonWith(deserializer)`.
+**Librería JWT:** se usa `jjwt-api` + `jjwt-impl` (sin `jjwt-jackson`, que arrastraría Jackson 2 y rompería la persistencia JSON de Hibernate — ver ADR-0007). La serialización JSON se hace con un codec propio sobre Jackson 3: `JwtJackson3Serializer` / `JwtJackson3Deserializer` (`infrastructure.security.codec`). Toda construcción/parseo de JWT debe registrarlo: `Jwts.builder().serializeToJsonWith(serializer)` y `Jwts.parser().deserializeJsonWith(deserializer)`.
 
 ### Validación de JWTs por request (`JwtAuthenticationFilter`)
 

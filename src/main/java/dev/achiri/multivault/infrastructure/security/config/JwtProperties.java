@@ -1,4 +1,4 @@
-package dev.achiri.multivault.infrastructure.security.properties;
+package dev.achiri.multivault.infrastructure.security.config;
 
 import lombok.Getter;
 import lombok.Setter;

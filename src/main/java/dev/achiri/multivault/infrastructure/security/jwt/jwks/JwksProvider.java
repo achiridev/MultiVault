@@ -1,4 +1,4 @@
-package dev.achiri.multivault.infrastructure.security.jwt;
+package dev.achiri.multivault.infrastructure.security.jwt.jwks;
 
 import lombok.RequiredArgsConstructor;
 import org.springframework.cache.annotation.CacheEvict;

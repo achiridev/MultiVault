@@ -5,7 +5,7 @@ import dev.achiri.multivault.apikey.model.ApiKey;
 import dev.achiri.multivault.apikey.model.ApiKeyType;
 import dev.achiri.multivault.apikey.repository.ApiKeyRepository;
 import dev.achiri.multivault.apikey.service.ApiKeyHasher;
-import dev.achiri.multivault.infrastructure.security.jwt.JwtJackson3Serializer;
+import dev.achiri.multivault.infrastructure.security.codec.JwtJackson3Serializer;
 import dev.achiri.multivault.support.BaseIntegrationTest;
 import dev.achiri.multivault.tenant.model.Tenant;
 import dev.achiri.multivault.tenant.model.TenantIdentityProvider;

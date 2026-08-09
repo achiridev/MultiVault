@@ -1,6 +1,6 @@
 package dev.achiri.multivault.infrastructure.security.jwt;
 
-import dev.achiri.multivault.infrastructure.security.properties.JwtProperties;
+import dev.achiri.multivault.infrastructure.security.config.JwtProperties;
 
 import io.jsonwebtoken.security.Keys;
 import org.springframework.stereotype.Component;

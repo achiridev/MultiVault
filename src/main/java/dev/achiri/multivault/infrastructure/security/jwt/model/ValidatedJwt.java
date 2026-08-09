@@ -1,4 +1,4 @@
-package dev.achiri.multivault.infrastructure.security.jwt;
+package dev.achiri.multivault.infrastructure.security.jwt.model;
 
 import java.util.UUID;
 

@@ -1,4 +1,4 @@
-package dev.achiri.multivault.infrastructure.security.jwt;
+package dev.achiri.multivault.infrastructure.security.codec;
 
 import io.jsonwebtoken.io.DeserializationException;
 import io.jsonwebtoken.io.Deserializer;
