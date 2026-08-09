@@ -9,6 +9,7 @@ import dev.achiri.multivault.common.exception.TenantProvisioningException;
 import dev.achiri.multivault.infrastructure.persistence.tenant.TenantSchemaProvisioner;
 import dev.achiri.multivault.plan.model.Plan;
 import dev.achiri.multivault.plan.repository.PlanRepository;
+import dev.achiri.multivault.support.BaseIntegrationTest;
 import dev.achiri.multivault.tenant.dto.CreateTenantRequest;
 import dev.achiri.multivault.tenant.dto.CreateTenantResponse;
 import dev.achiri.multivault.tenant.model.Tenant;
@@ -21,11 +22,9 @@ import dev.achiri.multivault.tenant.service.TenantService;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.test.context.support.WithMockUser;
-import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import org.springframework.test.web.servlet.MockMvc;
 
@@ -41,10 +40,8 @@ import static org.springframework.security.test.web.servlet.request.SecurityMock
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-@SpringBootTest
 @AutoConfigureMockMvc
-@ActiveProfiles("local")
-class TenantProvisioningTest {
+class TenantProvisioningTest extends BaseIntegrationTest {
 
     @Autowired
     private TenantService tenantService;
@@ -121,12 +118,93 @@ class TenantProvisioningTest {
                 "SELECT COUNT(*) FROM " + schemaName + ".folder", Integer.class);
         assertThat(folderCount).isZero();
 
+        List<String> tenantTables = jdbcTemplate.queryForList(
+                "SELECT table_name FROM information_schema.tables WHERE table_schema = ?",
+                String.class, schemaName);
+        assertThat(tenantTables).contains(
+                "folder", "document", "document_version", "document_permission", "flyway_schema_history");
+
+        Integer triggerCount = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM information_schema.triggers WHERE trigger_schema = ? AND trigger_name = ?",
+                Integer.class, schemaName, "trg_document_owner_permission");
+        assertThat(triggerCount).isEqualTo(1);
+
+        Integer indexCount = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM pg_indexes WHERE schemaname = ? AND indexname IN (?, ?, ?, ?)",
+                Integer.class, schemaName, "uq_folder_root_name", "uq_folder_parent_name_active",
+                "uq_document_permission", "uq_document_single_owner");
+        assertThat(indexCount).isEqualTo(4);
+
+        Integer appliedMigrations = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM " + schemaName + ".flyway_schema_history WHERE success = true",
+                Integer.class);
+        assertThat(appliedMigrations).isEqualTo(2);
+
         assertThat(tenantUsageRepository.findById(tenantId)).isPresent();
         assertThat(tenantMemberRepository.findAll()).anyMatch(member -> member.getTenantId().equals(tenantId));
         assertThat(apiKeyRepository.findAll()).anyMatch(key -> key.getTenantId().equals(tenantId));
 
         List<AuditLog> logs = auditLogRepository.findByTenantIdOrderByCreatedAtDesc(tenantId);
         assertThat(logs).anyMatch(log -> log.getAction().equals("TENANT_CREATED"));
+    }
+
+    @Test
+    void appliesDocumentOwnerPermissionTriggerOnInsert() {
+        Plan plan = activePlan();
+
+        CreateTenantResponse response = tenantService.create(
+                request("Acme Trigger", plan.getId(), "sub_9", "admin9@acme.com", null));
+        tenantId = response.tenant().id();
+        schemaName = response.tenant().schemaName();
+
+        UUID folderId = UUID.randomUUID();
+        UUID documentId = UUID.randomUUID();
+        UUID ownerId = UUID.randomUUID();
+
+        jdbcTemplate.update("INSERT INTO " + schemaName + ".folder (id, name, created_by) VALUES (?, ?, ?)",
+                folderId, "Invoices", ownerId);
+        jdbcTemplate.update("INSERT INTO " + schemaName + ".document (id, folder_id, owner_user_id, status) "
+                        + "VALUES (?, ?, ?, 'ACTIVE')",
+                documentId, folderId, ownerId);
+
+        Integer ownerPermissions = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM " + schemaName + ".document_permission "
+                        + "WHERE document_id = ? AND permission_level = 'OWNER' AND user_id = ?",
+                Integer.class, documentId, ownerId);
+        assertThat(ownerPermissions).isEqualTo(1);
+    }
+
+    @Test
+    void provisionIsIdempotent() {
+        Plan plan = activePlan();
+
+        CreateTenantResponse response = tenantService.create(
+                request("Acme Idempotent", plan.getId(), "sub_10", "admin10@acme.com", null));
+        tenantId = response.tenant().id();
+        schemaName = response.tenant().schemaName();
+
+        tenantSchemaProvisioner.provision(schemaName);
+
+        Integer appliedMigrations = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM " + schemaName + ".flyway_schema_history WHERE success = true",
+                Integer.class);
+        assertThat(appliedMigrations).isEqualTo(2);
+    }
+
+    @Test
+    void rejectsInvalidSchemaNames() {
+        assertThatThrownBy(() -> tenantSchemaProvisioner.provision(null))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> tenantSchemaProvisioner.provision(""))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> tenantSchemaProvisioner.provision("1acme"))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> tenantSchemaProvisioner.provision("Acme"))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> tenantSchemaProvisioner.provision("ac me"))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> tenantSchemaProvisioner.provision("acme$"))
+                .isInstanceOf(IllegalArgumentException.class);
     }
 
     @Test
