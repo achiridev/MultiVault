@@ -16,8 +16,13 @@ Tests de integración con **Testcontainers + PostgreSQL real** (postgres:16-alpi
 | `TenantProvisioningTest` | Integración | Onboarding completo: tenant ACTIVE, schema creado, api key, audit, idempotencia, trigger owner permission, validaciones |
 | `AuditEventPublishingTest` | Integración | Auditoría AFTER_COMMIT (persiste en commit, no en rollback) |
 | `ApiKeyServiceTest` | Unitario | Generación de api key (raw mostrada una vez, solo hash almacenado) |
-| `ApiKeyFilterIntegrationTest` | Integración | Autenticación por API key: `SERVICE` autentica, `STANDARD` sin JWT/revocada/expirada/desconocida/JWT-like → 401 |
-| `JwtFilterIntegrationTest` | Integración | Autenticación JWT multi-issuer contra JWKS local (HttpServer del JDK): JWT válido, issuer desconocido, firma inválida, expirado, audience errónea, algoritmo no permitido, combinación STANDARD+JWT (mismo y distinto tenant) |
+| `ApiKeyAuthenticatorTest` | Unitario | Resolución de api key por hash: mapeo a `ApiKeyIdentity` (expiración → epoch, null → 0), no encontrada → null |
+| `ApiKeyFilterIntegrationTest` | Integración | Autenticación por API key: `SERVICE` autentica (Bearer y `X-API-Key`), `STANDARD` sin JWT/revocada/expirada/desconocida/JWT-like → 401, cuerpo 401 como `ErrorResponse`, prioridad de `SERVICE` sobre JWT |
+| `JwtAuthenticationFilterTest` | Unitario | Filtro JWT: scopes de key `STANDARD` → authorities `SCOPE_*`, JWT inválido limpia el contexto, token `mv_live_` y auth previa saltan el decode, tenants distintos STANDARD/JWT → sin autenticar |
+| `JwksProviderTest` | Unitario | Fetch JWKS contra `HttpServer` del JDK: parseo OK, HTTP ≠ 200, JSON inválido, sin campo `keys` → `IllegalStateException` |
+| `MultiIssuerJwtDecoderTest` | Unitario | Decoder: issuer no configurado, JWKS vacío, kty no RSA, kid desconocido → fallback a primera clave, firma errónea → evict + reintento |
+| `RestAuthenticationEntryPointTest` | Unitario | 401 como `ErrorResponse` JSON (`status`/`mensaje`) |
+| `JwtFilterIntegrationTest` | Integración | Autenticación JWT multi-issuer contra JWKS local (HttpServer del JDK): JWT válido, issuer desconocido, firma inválida, expirado, audience errónea, algoritmo no permitido, malformado, sin claim `iss`, combinación STANDARD+JWT (mismo y distinto tenant), rotación de claves JWKS (evict+refetch), upsert de miembro en segundo login, cuerpo 401 como `ErrorResponse` |
 | `audit/*` | Unitario | Eventos, publisher, listener, modelo de auditoría |
 
 ## Infraestructura de test

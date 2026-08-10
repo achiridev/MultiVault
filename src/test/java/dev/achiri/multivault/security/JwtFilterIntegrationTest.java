@@ -8,6 +8,7 @@ import dev.achiri.multivault.apikey.service.ApiKeyHasher;
 import dev.achiri.multivault.infrastructure.security.codec.JwtJackson3Serializer;
 import dev.achiri.multivault.support.BaseIntegrationTest;
 import dev.achiri.multivault.tenant.model.Tenant;
+import dev.achiri.multivault.tenant.model.TenantMember;
 import dev.achiri.multivault.tenant.model.TenantIdentityProvider;
 import dev.achiri.multivault.tenant.model.TenantStatus;
 import dev.achiri.multivault.tenant.repository.TenantIdentityProviderRepository;
@@ -36,8 +37,10 @@ import java.util.List;
 import java.util.UUID;
 
 import static java.nio.charset.StandardCharsets.UTF_8;
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 @AutoConfigureMockMvc
@@ -51,6 +54,8 @@ class JwtFilterIntegrationTest extends BaseIntegrationTest {
 
     private static final KeyPair VALID_KEY_PAIR = rsaKeyPair();
     private static final KeyPair OTHER_KEY_PAIR = rsaKeyPair();
+    private static final KeyPair ROTATED_KEY_PAIR = rsaKeyPair();
+    private static final String ROTATED_KEY_ID = "rotated-key";
 
     @Autowired
     private MockMvc mockMvc;
@@ -75,13 +80,14 @@ class JwtFilterIntegrationTest extends BaseIntegrationTest {
 
     private UUID tenantId;
     private HttpServer jwksServer;
+    private volatile boolean serveRotatedJwks;
 
     @BeforeEach
     void setUp() throws IOException {
         tenantId = createTenant();
         jwksServer = HttpServer.create(new InetSocketAddress(0), 0);
         jwksServer.createContext("/jwks", exchange -> {
-            byte[] body = jwksJson().getBytes(UTF_8);
+            byte[] body = (serveRotatedJwks ? rotatedJwksJson() : jwksJson()).getBytes(UTF_8);
             exchange.sendResponseHeaders(200, body.length);
             exchange.getResponseBody().write(body);
             exchange.close();
@@ -192,6 +198,95 @@ class JwtFilterIntegrationTest extends BaseIntegrationTest {
                 .andExpect(status().isUnauthorized());
     }
 
+    @Test
+    void rejectsMalformedJwt() throws Exception {
+        mockMvc.perform(put("/api/v1/tenants/" + tenantId + "/identity-provider")
+                        .header("Authorization", "Bearer not-a-jwt")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(validBody()))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void rejectsJwtWithoutIssuerClaim() throws Exception {
+        String token = Jwts.builder()
+                .serializeToJsonWith(jwtJackson3Serializer)
+                .header().keyId(KEY_ID).and()
+                .subject(SUBJECT)
+                .setAudience(AUDIENCE)
+                .expiration(Date.from(Instant.now().plusSeconds(300)))
+                .signWith(VALID_KEY_PAIR.getPrivate(), Jwts.SIG.RS256)
+                .compact();
+
+        mockMvc.perform(put("/api/v1/tenants/" + tenantId + "/identity-provider")
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(validBody()))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void returnsUnauthorizedErrorResponseBody() throws Exception {
+        mockMvc.perform(put("/api/v1/tenants/" + tenantId + "/identity-provider")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(validBody()))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.status").value(401))
+                .andExpect(jsonPath("$.mensaje").value("Autenticación requerida"));
+    }
+
+    @Test
+    void handlesJwksKeyRotation() throws Exception {
+        String tokenA = jwt(KEY_ID, VALID_KEY_PAIR, ISSUER, SUBJECT, AUDIENCE, Instant.now().plusSeconds(300));
+
+        mockMvc.perform(put("/api/v1/tenants/" + tenantId + "/identity-provider")
+                        .header("Authorization", "Bearer " + tokenA)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(validBody()))
+                .andExpect(status().isOk());
+
+        serveRotatedJwks = true;
+        String tokenB = jwt(ROTATED_KEY_ID, ROTATED_KEY_PAIR, ISSUER, SUBJECT, AUDIENCE, Instant.now().plusSeconds(300));
+
+        mockMvc.perform(put("/api/v1/tenants/" + tenantId + "/identity-provider")
+                        .header("Authorization", "Bearer " + tokenB)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(validBody()))
+                .andExpect(status().isOk());
+    }
+
+    @Test
+    void updatesExistingMemberOnReLogin() throws Exception {
+        String firstToken = jwt(KEY_ID, VALID_KEY_PAIR, ISSUER, SUBJECT, AUDIENCE, Instant.now().plusSeconds(300));
+
+        mockMvc.perform(put("/api/v1/tenants/" + tenantId + "/identity-provider")
+                        .header("Authorization", "Bearer " + firstToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(validBody()))
+                .andExpect(status().isOk());
+
+        TenantMember firstLogin = tenantMemberRepository.findByTenantIdAndSubject(tenantId, SUBJECT).orElseThrow();
+
+        String secondToken = jwt(KEY_ID, VALID_KEY_PAIR, ISSUER, SUBJECT, AUDIENCE, Instant.now().plusSeconds(300),
+                "updated@test.com", "User Updated");
+
+        mockMvc.perform(put("/api/v1/tenants/" + tenantId + "/identity-provider")
+                        .header("Authorization", "Bearer " + secondToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(validBody()))
+                .andExpect(status().isOk());
+
+        TenantMember updated = tenantMemberRepository.findByTenantIdAndSubject(tenantId, SUBJECT).orElseThrow();
+        assertThat(updated.getId()).isEqualTo(firstLogin.getId());
+        assertThat(updated.getEmail()).isEqualTo("updated@test.com");
+        assertThat(updated.getDisplayName()).isEqualTo("User Updated");
+        assertThat(updated.getFirstSeenAt()).isEqualTo(firstLogin.getFirstSeenAt());
+        assertThat(updated.getLastSeenAt()).isAfterOrEqualTo(firstLogin.getLastSeenAt());
+        assertThat(tenantMemberRepository.findAll().stream()
+                .filter(member -> member.getTenantId().equals(tenantId))
+                .toList()).hasSize(1);
+    }
+
     private UUID createTenant() {
         Tenant tenant = new Tenant();
         tenant.setName("test tenant");
@@ -228,6 +323,11 @@ class JwtFilterIntegrationTest extends BaseIntegrationTest {
 
     private String jwt(String kid, KeyPair keyPair, String issuer, String subject, String audience,
                        Instant expiresAt) {
+        return jwt(kid, keyPair, issuer, subject, audience, expiresAt, subject + "@test.com", "User One");
+    }
+
+    private String jwt(String kid, KeyPair keyPair, String issuer, String subject, String audience,
+                       Instant expiresAt, String email, String displayName) {
         return Jwts.builder()
                 .serializeToJsonWith(jwtJackson3Serializer)
                 .header().keyId(kid).and()
@@ -235,8 +335,8 @@ class JwtFilterIntegrationTest extends BaseIntegrationTest {
                 .subject(subject)
                 .setAudience(audience)
                 .expiration(Date.from(expiresAt))
-                .claim("email", subject + "@test.com")
-                .claim("name", "User One")
+                .claim("email", email)
+                .claim("name", displayName)
                 .signWith(keyPair.getPrivate(), Jwts.SIG.RS256)
                 .compact();
     }
@@ -245,6 +345,13 @@ class JwtFilterIntegrationTest extends BaseIntegrationTest {
         RSAPublicKey rsa = (RSAPublicKey) VALID_KEY_PAIR.getPublic();
         return """
                 {"keys":[{"kid":"test-key","kty":"RSA","alg":"RS256","n":"%s","e":"%s"}]}
+                """.formatted(base64Url(rsa.getModulus()), base64Url(rsa.getPublicExponent()));
+    }
+
+    private String rotatedJwksJson() {
+        RSAPublicKey rsa = (RSAPublicKey) ROTATED_KEY_PAIR.getPublic();
+        return """
+                {"keys":[{"kid":"rotated-key","kty":"RSA","alg":"RS256","n":"%s","e":"%s"}]}
                 """.formatted(base64Url(rsa.getModulus()), base64Url(rsa.getPublicExponent()));
     }
 
@@ -265,12 +372,12 @@ class JwtFilterIntegrationTest extends BaseIntegrationTest {
     private String validBody() {
         return """
                 {
-                  "issuer": "https://idp.acme.com",
-                  "jwksUri": "https://idp.acme.com/.well-known/jwks.json",
-                  "audience": "https://api.acme.com",
+                  "issuer": "%s",
+                  "jwksUri": "http://localhost:%d/jwks",
+                  "audience": "%s",
                   "allowedAlgorithms": ["RS256"],
                   "clockSkewSeconds": 60
                 }
-                """;
+                """.formatted(ISSUER, jwksServer.getAddress().getPort(), AUDIENCE);
     }
 }

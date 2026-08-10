@@ -21,6 +21,7 @@ import java.util.List;
 import java.util.UUID;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 @AutoConfigureMockMvc
@@ -118,6 +119,48 @@ class ApiKeyFilterIntegrationTest extends BaseIntegrationTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(validBody()))
                 .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void authenticatesServiceKeyViaXApiKeyHeader() throws Exception {
+        String rawKey = createKey(ApiKeyType.SERVICE, null, null);
+
+        mockMvc.perform(put(PROTECTED_PATH)
+                        .header("X-API-Key", rawKey)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(validBody()))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
+    void rejectsUnknownKeyViaXApiKeyHeader() throws Exception {
+        mockMvc.perform(put(PROTECTED_PATH)
+                        .header("X-API-Key", randomRawKey())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(validBody()))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void returnsUnauthorizedErrorResponseBody() throws Exception {
+        mockMvc.perform(put(PROTECTED_PATH)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(validBody()))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.status").value(401))
+                .andExpect(jsonPath("$.mensaje").value("Autenticación requerida"));
+    }
+
+    @Test
+    void serviceKeyTakesPriorityOverJwt() throws Exception {
+        String rawKey = createKey(ApiKeyType.SERVICE, null, null);
+
+        mockMvc.perform(put(PROTECTED_PATH)
+                        .header("Authorization", "Bearer eyJhbGciOiJSUzI1NiJ9.payload")
+                        .header("X-API-Key", rawKey)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(validBody()))
+                .andExpect(status().isNotFound());
     }
 
     @Test
