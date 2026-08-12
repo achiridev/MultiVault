@@ -1,4 +1,4 @@
-package dev.achiri.multivault.infrastructure.persistence.tenant;
+package dev.achiri.multivault.infrastructure.persistence.tenant.context;
 
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;

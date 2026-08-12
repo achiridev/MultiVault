@@ -1,5 +1,6 @@
-package dev.achiri.multivault.infrastructure.persistence.tenant;
+package dev.achiri.multivault.infrastructure.persistence.tenant.hibernate;
 
+import dev.achiri.multivault.infrastructure.persistence.tenant.context.TenantContext;
 import org.hibernate.context.spi.CurrentTenantIdentifierResolver;
 import org.springframework.stereotype.Component;
 

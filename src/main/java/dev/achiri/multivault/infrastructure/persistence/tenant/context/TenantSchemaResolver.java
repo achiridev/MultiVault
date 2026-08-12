@@ -1,4 +1,4 @@
-package dev.achiri.multivault.infrastructure.persistence.tenant;
+package dev.achiri.multivault.infrastructure.persistence.tenant.context;
 
 import dev.achiri.multivault.common.exception.RecursoNoEncontradoException;
 import dev.achiri.multivault.tenant.model.Tenant;

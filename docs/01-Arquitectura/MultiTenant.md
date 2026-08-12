@@ -67,8 +67,8 @@ Límite de 63 caracteres (límite de identificadores PostgreSQL).
 
 ### Enrutamiento en runtime (ADR-0009)
 
-- `TenantContext` (ThreadLocal) guarda el `schema_name` del request actual (`infrastructure/persistence/tenant/TenantContext`).
-- `TenantContextFilter` (`OncePerRequestFilter`, registrado **después** de los filtros JWT/API key) lee el principal (`TenantUserPrincipal.tenantId` o `ApiKeyPrincipal.tenantId`), resuelve el schema vía `TenantSchemaResolver` (lookup `tenant.schema_name` por `TenantRepository`, 404 si el tenant no existe) y lo setea en `TenantContext`; limpia el contexto en `finally`.
+- `TenantContext` (ThreadLocal) guarda el `schema_name` del request actual (`infrastructure/persistence/tenant/context/TenantContext`).
+- `TenantContextFilter` (`OncePerRequestFilter`, registrado **después** de los filtros JWT/API key) lee el principal (`TenantUserPrincipal.tenantId` o `ApiKeyPrincipal.tenantId`), resuelve el schema vía `TenantSchemaResolver` (lookup `tenant.schema_name` por `TenantRepository`, 404 si el tenant no existe) y lo setea en `TenantContext`; limpia el contexto en `finally`. Ambos viven en `infrastructure/persistence/tenant/context/`.
 - Requests sin autenticación (p.ej. `POST /api/v1/tenants`) o sin tenant → contexto vacío. El resolver de Hibernate mapea ese caso al identificador sentinela `public` (Hibernate 7 exige un identificador **no nulo** al abrir una Session); el connection provider trata `public` como la conexión `any` (sin `SET search_path`).
 - `MultiTenantConnectionProviderImpl.selectConnectionProvider(schema)` entrega una conexión del pool único con `SET search_path TO "<schema>"` (schema validado por regex al crearse; comillas escapadas igualmente). Al liberar (`releaseConnection`) ejecuta `SET search_path TO public` para no fugar el schema del tenant en el pool. `supportsAggressiveRelease()` → `false`.
 - Las tablas públicas se cualifican explícitamente con `@Table(schema = "public")` (no dependen del `search_path`); las tablas por-tenant se dejan sin schema y resuelven vía `search_path`.

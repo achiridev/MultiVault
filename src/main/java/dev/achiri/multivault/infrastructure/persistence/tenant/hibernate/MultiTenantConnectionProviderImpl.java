@@ -1,4 +1,4 @@
-package dev.achiri.multivault.infrastructure.persistence.tenant;
+package dev.achiri.multivault.infrastructure.persistence.tenant.hibernate;
 
 import lombok.RequiredArgsConstructor;
 import org.hibernate.engine.jdbc.connections.spi.AbstractMultiTenantConnectionProvider;

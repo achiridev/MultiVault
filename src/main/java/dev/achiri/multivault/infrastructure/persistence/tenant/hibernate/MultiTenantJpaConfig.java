@@ -1,4 +1,4 @@
-package dev.achiri.multivault.infrastructure.persistence.tenant;
+package dev.achiri.multivault.infrastructure.persistence.tenant.hibernate;
 
 import org.hibernate.cfg.MultiTenancySettings;
 import org.springframework.boot.hibernate.autoconfigure.HibernatePropertiesCustomizer;

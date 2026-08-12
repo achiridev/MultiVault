@@ -1,6 +1,6 @@
 package dev.achiri.multivault.infrastructure.security.config;
 
-import dev.achiri.multivault.infrastructure.persistence.tenant.TenantContextFilter;
+import dev.achiri.multivault.infrastructure.persistence.tenant.context.TenantContextFilter;
 import dev.achiri.multivault.infrastructure.security.apikey.ApiKeyAuthenticationFilter;
 import dev.achiri.multivault.infrastructure.security.handler.RestAuthenticationEntryPoint;
 import dev.achiri.multivault.infrastructure.security.jwt.JwtAuthenticationFilter;

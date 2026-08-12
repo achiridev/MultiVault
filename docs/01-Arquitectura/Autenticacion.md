@@ -90,7 +90,7 @@ El hash se extrajo a `apikey/service/ApiKeyHasher` (reutilizado por `ApiKeyServi
 
 ### Resolución del tenant por request (`TenantContextFilter`)
 
-`infrastructure/persistence/tenant/TenantContextFilter` (`OncePerRequestFilter`, registrado **después** de `JwtAuthenticationFilter` en `SecurityConfig`) resuelve el schema del tenant para el multi-tenancy por `search_path` (ADR-0009):
+`infrastructure/persistence/tenant/context/TenantContextFilter` (`OncePerRequestFilter`, registrado **después** de `JwtAuthenticationFilter` en `SecurityConfig`) resuelve el schema del tenant para el multi-tenancy por `search_path` (ADR-0009):
 
 - Lee el principal del `SecurityContext`: `TenantUserPrincipal.tenantId` (JWT) o `ApiKeyPrincipal.tenantId` (API key).
 - Resuelve el `schema_name` vía `TenantSchemaResolver` (lookup `tenant.schema_name`; 404 si el tenant no existe) y lo guarda en `TenantContext` (ThreadLocal).

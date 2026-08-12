@@ -1,4 +1,4 @@
-package dev.achiri.multivault.infrastructure.persistence.tenant;
+package dev.achiri.multivault.infrastructure.persistence.tenant.context;
 
 import dev.achiri.multivault.apikey.model.ApiKeyType;
 import dev.achiri.multivault.infrastructure.security.apikey.ApiKeyPrincipal;

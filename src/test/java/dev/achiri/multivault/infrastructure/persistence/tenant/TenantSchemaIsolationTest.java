@@ -4,6 +4,7 @@ import dev.achiri.multivault.audit.repository.AuditLogRepository;
 import dev.achiri.multivault.document.model.Document;
 import dev.achiri.multivault.document.model.DocumentStatus;
 import dev.achiri.multivault.document.repository.DocumentRepository;
+import dev.achiri.multivault.infrastructure.persistence.tenant.context.TenantContext;
 import dev.achiri.multivault.plan.model.Plan;
 import dev.achiri.multivault.plan.repository.PlanRepository;
 import dev.achiri.multivault.support.BaseIntegrationTest;

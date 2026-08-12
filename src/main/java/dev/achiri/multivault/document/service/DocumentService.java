@@ -11,7 +11,7 @@ import dev.achiri.multivault.document.model.DocumentStatus;
 import dev.achiri.multivault.document.model.DocumentVersion;
 import dev.achiri.multivault.document.repository.DocumentRepository;
 import dev.achiri.multivault.document.repository.DocumentVersionRepository;
-import dev.achiri.multivault.infrastructure.persistence.tenant.TenantContext;
+import dev.achiri.multivault.infrastructure.persistence.tenant.context.TenantContext;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;

@@ -1,4 +1,4 @@
-package dev.achiri.multivault.infrastructure.persistence.tenant;
+package dev.achiri.multivault.infrastructure.persistence.tenant.hibernate;
 
 import org.hibernate.engine.jdbc.connections.spi.ConnectionProvider;
 
