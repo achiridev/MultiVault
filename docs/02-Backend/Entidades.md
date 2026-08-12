@@ -31,8 +31,8 @@ Existen las entidades `Tenant`, `TenantIdentityProvider`, `TenantMember`, `Audit
 | Tabla | Posible clase | Notas |
 |---|---|---|
 | `folder` | `Folder` | Self-ref parent, path materializado |
-| `document` | `Document` | current_version_id FK circular |
-| `document_version` | `DocumentVersion` | Immutable, storage_key, checksum |
+| `document` | `Document` ✅ | `current_version_id` como `UUID` plano (FK circular, sin relación JPA) |
+| `document_version` | `DocumentVersion` ✅ | Immutable (sin `updated_at`/`deleted_at`), `created_by` who-column, storage_key, checksum |
 | `document_permission` | `DocumentPermission` | ACL, permission_level enum |
 
 ### Convenciones de mapeo
@@ -49,6 +49,7 @@ Existen las entidades `Tenant`, `TenantIdentityProvider`, `TenantMember`, `Audit
 | Soft deletes | campo `deletedAt`; queries siempre con `WHERE deleted_at IS NULL` |
 | Versiones de documentos | nunca UPDATE; solo INSERT y repunte de FK en `current_version_id` |
 | Auditoría | entidades con `created_at`/`updated_at` → `DateAudit`; con `deleted_at` → `SoftDeletable` |
+| Validación `ddl-auto: validate` | Valida solo las tablas del schema público. Las tablas por-tenant (`folder`, `document`, `document_version`, `document_permission`) se excluyen vía `TenantSchemaFilterProvider` (`hibernate.hbm2ddl.schema_filter_provider`), porque no existen en `public`; su schema lo crea/valida el Flyway por-tenant |
 | Organización | package por feature con sub-paquetes: entidades en `<feature>/model/` (p.ej. `tenant/model/`) |
 
 ### Entidades del schema público
@@ -79,7 +80,7 @@ Existen las entidades `Tenant`, `TenantIdentityProvider`, `TenantMember`, `Audit
 | `SoftDeletable extends DateAudit` | `deletedAt` (`Instant`) | Entidades soft-delete (`folder`, `document`) |
 
 - Las columnas se mapean explícitamente (`@Column(name = "created_at")`) porque con `ddl-auto: validate` y `PhysicalNamingStrategyStandardImpl` no hay conversión a snake_case.
-- `AuditorAwareImpl` (`infrastructure/persistence/auditing`) es un placeholder que devuelve un UUID de sistema (`00000000-0000-0000-0000-000000000000`) hasta que exista autenticación. Solo aplica a who-columns del schema de tenant (`folder.created_by`, `document_version.created_by`) que guardan `external user_id`; el schema público no usa who-columns.
+- `AuditorAwareImpl` (`infrastructure/persistence/auditing`) es un placeholder que devuelve un UUID de sistema (`00000000-0000-0000-0000-000000000000`) hasta que exista autenticación. Solo aplica a who-columns del schema de tenant (`folder.created_by`, `document_version.created_by`) que guardan `external user_id`; el schema público no usa who-columns. `DocumentVersion.createdBy` ya se puebla con `@CreatedBy`.
 - **Requisito futuro**: reemplazar `AuditorAwareImpl` por un `AuditorAware` que lea el `tenant_member.id` autenticado antes de poblar `@CreatedBy` con datos reales.
 
 ### Ejemplo de estructura esperada
@@ -108,16 +109,16 @@ public class Plan {
 ## Pendientes
 
 - [ ] Crear el resto de entidades JPA para el schema público (`platform_user`)
-- [ ] Crear todas las entidades JPA para el schema por tenant
+- [ ] Crear el resto de entidades JPA para el schema por tenant (`folder`, `document_permission`)
 - [x] Definir enum: `TenantStatus`
 - [x] Definir enums: `PlanCode`, `SubscriptionStatus`
 - [x] Definir enum: `ActorType`
-- [x] Definir enums: `ApiKeyType`; pendientes `PlatformUserRole`, `DocumentStatus`, `PermissionLevel`
+- [x] Definir enums: `ApiKeyType`, `DocumentStatus`; pendientes `PlatformUserRole`, `PermissionLevel`
 - [x] Definir converters para: `JsonNode` (JSONB) vía `@JdbcTypeCode(SqlTypes.JSON)`, `Inet` (INET) vía `InetAddress` + `@JdbcTypeCode(SqlTypes.INET)` — `List<String>` (TEXT[]) ya resuelto con `@JdbcTypeCode(SqlTypes.ARRAY)`
 - [ ] Definir relaciones JPA (`@OneToMany`, `@ManyToOne`, `@OneToOne`)
 - [x] Definir `@EntityListeners` para `created_at` / `updated_at` automáticos (`DateAudit`)
 
 ## Preguntas abiertas
 
-- ¿Las entidades del schema de tenant serán clases separadas o se usarán en un persistence unit distinto?
-- ¿Cómo se manejará la FK circular entre `document` y `document_version`? ¿Se omite la relación JPA en un lado?
+- ¿Las entidades del schema de tenant serán clases separadas o se usarán en un persistence unit distinto? (hoy comparten el persistence unit por defecto; la validación de sus tablas se excluye vía `TenantSchemaFilterProvider` hasta implementar el `TenantConnectionProvider`)
+- ¿Cómo se manejará la FK circular entre `document` y `document_version`? — `Document.currentVersionId` se modela como `UUID` plano sin relación JPA (patrón de FK planas del proyecto); la FK la gestiona la BD

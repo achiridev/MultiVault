@@ -88,4 +88,4 @@ V1 definía `fn_document_owner_permission` referenciando `document_permission` s
 ## Preguntas abiertas
 
 - ¿Cómo se manejarán las migraciones Flyway en los schemas de tenant existentes cuando se agreguen nuevas tablas?
-- ¿Se usará `ddl-auto: validate` para verificar que las entidades coinciden con el schema?
+- `ddl-auto: validate` está activo para el schema público; las tablas por-tenant se excluyen de la validación Hibernate vía `TenantSchemaFilterProvider` (su schema lo valida el Flyway por-tenant)
