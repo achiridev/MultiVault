@@ -88,6 +88,15 @@ CREATE TABLE api_key (
 
 El hash se extrajo a `apikey/service/ApiKeyHasher` (reutilizado por `ApiKeyService` y el filtro).
 
+### Resolución del tenant por request (`TenantContextFilter`)
+
+`infrastructure/persistence/tenant/TenantContextFilter` (`OncePerRequestFilter`, registrado **después** de `JwtAuthenticationFilter` en `SecurityConfig`) resuelve el schema del tenant para el multi-tenancy por `search_path` (ADR-0009):
+
+- Lee el principal del `SecurityContext`: `TenantUserPrincipal.tenantId` (JWT) o `ApiKeyPrincipal.tenantId` (API key).
+- Resuelve el `schema_name` vía `TenantSchemaResolver` (lookup `tenant.schema_name`; 404 si el tenant no existe) y lo guarda en `TenantContext` (ThreadLocal).
+- Limpia el contexto en `finally`. Requests sin autenticación (p.ej. `POST /api/v1/tenants`) y operaciones públicas quedan en `public` (el resolver de Hibernate mapea el contexto vacío al identificador sentinela `public`).
+- La validación del token y el upsert de `tenant_member` corren contra `public` porque el filtro se registra después de los filtros de auth.
+
 ### Mecanismo 3: Platform User (platform_user)
 
 Para el staff interno que administra MultiVault.

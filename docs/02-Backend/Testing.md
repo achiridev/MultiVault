@@ -14,6 +14,10 @@ Tests de integración con **Testcontainers + PostgreSQL real** (postgres:16-alpi
 |---|---|---|
 | `MultivaultApplicationTests` | Integración | Contexto Spring carga contra PostgreSQL de Testcontainers |
 | `TenantProvisioningTest` | Integración | Onboarding completo: tenant ACTIVE, schema creado, api key, audit, idempotencia, trigger owner permission, validaciones |
+| `TenantContextTest` | Unitario | `TenantContext` (ThreadLocal): default null, set/get/clear, aislamiento entre hilos |
+| `TenantSchemaIsolationTest` | Integración | Aislamiento por schema: con `TenantContext` en schema A, las queries JPA de `document` caen en A (no en B); tablas públicas consultables sin contexto |
+| `TenantContextFilterTest` | Integración | `TenantContextFilter`: resuelve el schema desde el principal JWT y desde API key; contexto limpio en requests anónimos y tras el request |
+| `DocumentFlowIntegrationTest` | Integración | Flujo de documentos con API key SERVICE real (MockMvc): crear documento → fila `document` + versión v1 + `current_version_id` repuntado + fila OWNER (trigger) + `created_by` poblado; `addVersion` (v2 inmutable, repunte); aislamiento (GET con key de otro tenant → 404); `ownerUserId` obligatorio para SERVICE (400) |
 | `AuditEventPublishingTest` | Integración | Auditoría AFTER_COMMIT (persiste en commit, no en rollback) |
 | `ApiKeyServiceTest` | Unitario | Generación de api key (raw mostrada una vez, solo hash almacenado) |
 | `ApiKeyAuthenticatorTest` | Unitario | Resolución de api key por hash: mapeo a `ApiKeyIdentity` (expiración → epoch, null → 0), no encontrada → null |
@@ -61,7 +65,7 @@ Docker debe estar corriendo. Los tests crean y destruyen sus datos (schemas de t
 ## Pendientes
 
 - [ ] Configurar cobertura con JaCoCo
-- [ ] Tests de controladores con MockMvc (por ahora validación de body y `PUT /tenants/{id}/identity-provider` en `TenantProvisioningTest`)
+- [x] Tests de controladores con MockMvc — `TenantProvisioningTest` (validación y PUT IdP) y `DocumentFlowIntegrationTest` (POST/GET documentos con key SERVICE real)
 - [x] Implementar tests de seguridad (autenticación por API key y JWT en `ApiKeyFilterIntegrationTest` / `JwtFilterIntegrationTest`; autorización pendiente)
 
 ## Preguntas abiertas

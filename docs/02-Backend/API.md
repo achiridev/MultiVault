@@ -6,7 +6,7 @@ Documentar los endpoints REST expuestos por el backend.
 
 ## Estado actual
 
-Implementado: `POST /api/v1/tenants` (creación de organización). El resto de endpoints se infieren del modelo de datos. El proyecto incluye `spring-boot-starter-webmvc`, confirmando API REST sobre Servlet.
+Implementado: `POST /api/v1/tenants` (creación de organización), `PUT /api/v1/tenants/{tenantId}/identity-provider`, y el flujo de documentos (crear, subir versión, obtener). El resto de endpoints se infieren del modelo de datos. El proyecto incluye `spring-boot-starter-webmvc`, confirmando API REST sobre Servlet.
 
 ### POST `/api/v1/tenants` — Crear organización (implementado)
 
@@ -70,6 +70,68 @@ Request:
 
 `allowedAlgorithms` y `clockSkewSeconds` opcionales con defaults (`RS256` / `60`).
 
+### Documentos (scope del tenant) — implementado
+
+Los endpoints de documentos operan sobre el schema del tenant resuelto desde el principal autenticado (JWT o API key SERVICE). El contenido binario **no** se sube aún: los endpoints crean metadatos y la app genera el `storageKey` (`{schema}/{documentId}/{versionNumber}/{checksum}`); la subida/descarga queda pendiente de un ADR de storage.
+
+El actor (`owner_user_id` del documento y `created_by` de cada versión) se resuelve así: con JWT → `memberId` del principal; con API key `SERVICE` → `ownerUserId` **obligatorio** en el body (400 si falta). Al crear el documento, el trigger DB `trg_document_owner_permission` crea automáticamente la fila OWNER en `document_permission`.
+
+#### POST `/api/v1/documents` — Crear documento (implementado)
+
+Crea el documento (`status = ACTIVE`) + su versión v1 + repunta `current_version_id`. `201 Created`; `400` con body inválido o falta de `ownerUserId` con key SERVICE.
+
+Request:
+```json
+{
+  "name": "Contract.pdf",
+  "mimeType": "application/pdf",
+  "sizeBytes": 2048,
+  "checksum": "<sha256 hex>",
+  "folderId": "00000000-0000-0000-0000-000000000000",
+  "ownerUserId": "00000000-0000-0000-0000-000000000000"
+}
+```
+
+`folderId` opcional (el schema aún no expone el CRUD de carpetas); `ownerUserId` opcional con JWT (se ignora y se usa el `memberId` del principal), obligatorio con key SERVICE.
+
+Response `201 Created`:
+```json
+{
+  "id": "...",
+  "name": "Contract.pdf",
+  "status": "ACTIVE",
+  "currentVersion": {
+    "id": "...",
+    "versionNumber": 1,
+    "name": "Contract.pdf",
+    "storageKey": "mv_acme/aaa.../1/<checksum>",
+    "mimeType": "application/pdf",
+    "sizeBytes": 2048,
+    "checksum": "...",
+    "createdBy": "...",
+    "createdAt": "2026-08-12T17:49:16.120537Z"
+  }
+}
+```
+
+#### POST `/api/v1/documents/{documentId}/versions` — Subir nueva versión (implementado)
+
+Crea una versión inmutable con `version_number = max + 1` y repunta `current_version_id`. `404` si el documento no existe o está borrado (soft delete). `201 Created` con el DTO de la versión. `ownerUserId` opcional con JWT, obligatorio con key SERVICE (puebla `created_by`).
+
+Request:
+```json
+{
+  "name": "Contract_v2.pdf",
+  "mimeType": "application/pdf",
+  "sizeBytes": 4096,
+  "checksum": "<sha256 hex>"
+}
+```
+
+#### GET `/api/v1/documents/{documentId}` — Obtener documento (implementado)
+
+Devuelve el documento con su versión actual. `404` si no existe o pertenece a otro tenant (el aislamiento lo da el routing por schema del request). `200` con la misma estructura de `POST /api/v1/documents`.
+
 ## Información encontrada
 
 Existen controladores REST (`TenantController` en `/api/v1/tenants`) sobre Servlet (`spring-boot-starter-webmvc`).
@@ -97,14 +159,14 @@ Existen controladores REST (`TenantController` en `/api/v1/tenants`) sobre Servl
 #### Documentos (scope del tenant)
 | Método | Path | Descripción |
 |---|---|---|
-| POST | `/api/v1/documents` | Crear documento |
-| GET | `/api/v1/documents/{id}` | Obtener documento |
+| POST | `/api/v1/documents` | ✅ Crear documento |
+| GET | `/api/v1/documents/{id}` | ✅ Obtener documento |
 | GET | `/api/v1/documents` | Listar documentos |
 | PATCH | `/api/v1/documents/{id}` | Actualizar documento |
 | DELETE | `/api/v1/documents/{id}` | Eliminar documento (soft delete) |
-| POST | `/api/v1/documents/{id}/versions` | Subir nueva versión |
+| POST | `/api/v1/documents/{id}/versions` | ✅ Subir nueva versión |
 | GET | `/api/v1/documents/{id}/versions` | Listar versiones |
-| GET | `/api/v1/documents/{id}/versions/{versionId}` | Descargar versión |
+| GET | `/api/v1/documents/{id}/versions/{versionId}` | Descargar versión (pendiente de storage) |
 
 #### Carpetas (scope del tenant)
 | Método | Path | Descripción |

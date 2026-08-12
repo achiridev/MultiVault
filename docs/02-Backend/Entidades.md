@@ -43,12 +43,13 @@ Existen las entidades `Tenant`, `TenantIdentityProvider`, `TenantMember`, `Audit
 | Naming column → field | snake_case → camelCase (`current_version_id` → `currentVersionId`) |
 | IDs | `java.util.UUID` con `@GeneratedValue(strategy = GenerationType.UUID)` |
 | Timestamps | `OffsetDateTime` o `Instant` para `TIMESTAMPTZ` |
-| JSONB | `com.fasterxml.jackson.databind.JsonNode` |
+| JSONB | `tools.jackson.databind.JsonNode` (Jackson 3, Boot 4) |
 | Arrays (TEXT[]) | `List<String>` con `@JdbcTypeCode(SqlTypes.ARRAY)` + `@Array(length)` — el `AttributeConverter` **no aplica** (Hibernate 7 lo trata como basic type y falla en `BasicPluralType`) |
 | Enums | Java `enum` con `@Enumerated(EnumType.STRING)` |
 | Soft deletes | campo `deletedAt`; queries siempre con `WHERE deleted_at IS NULL` |
 | Versiones de documentos | nunca UPDATE; solo INSERT y repunte de FK en `current_version_id` |
 | Auditoría | entidades con `created_at`/`updated_at` → `DateAudit`; con `deleted_at` → `SoftDeletable` |
+| Tablas públicas | `@Table(name = "x", schema = "public")` explícito (multi-tenancy por `search_path`, ADR-0009): las tablas públicas no dependen del schema del request; las tablas por-tenant se dejan sin `schema` y resuelven vía `search_path` |
 | Validación `ddl-auto: validate` | Valida solo las tablas del schema público. Las tablas por-tenant (`folder`, `document`, `document_version`, `document_permission`) se excluyen vía `TenantSchemaFilterProvider` (`hibernate.hbm2ddl.schema_filter_provider`), porque no existen en `public`; su schema lo crea/valida el Flyway por-tenant |
 | Organización | package por feature con sub-paquetes: entidades en `<feature>/model/` (p.ej. `tenant/model/`) |
 
@@ -80,8 +81,8 @@ Existen las entidades `Tenant`, `TenantIdentityProvider`, `TenantMember`, `Audit
 | `SoftDeletable extends DateAudit` | `deletedAt` (`Instant`) | Entidades soft-delete (`folder`, `document`) |
 
 - Las columnas se mapean explícitamente (`@Column(name = "created_at")`) porque con `ddl-auto: validate` y `PhysicalNamingStrategyStandardImpl` no hay conversión a snake_case.
-- `AuditorAwareImpl` (`infrastructure/persistence/auditing`) es un placeholder que devuelve un UUID de sistema (`00000000-0000-0000-0000-000000000000`) hasta que exista autenticación. Solo aplica a who-columns del schema de tenant (`folder.created_by`, `document_version.created_by`) que guardan `external user_id`; el schema público no usa who-columns. `DocumentVersion.createdBy` ya se puebla con `@CreatedBy`.
-- **Requisito futuro**: reemplazar `AuditorAwareImpl` por un `AuditorAware` que lea el `tenant_member.id` autenticado antes de poblar `@CreatedBy` con datos reales.
+- `AuditorAwareImpl` (`infrastructure/persistence/auditing`) es un placeholder que devuelve un UUID de sistema (`00000000-0000-0000-0000-000000000000`). Solo aplica a who-columns del schema de tenant que usan `@CreatedBy` (`folder.created_by`); `DocumentVersion.createdBy` **ya no** usa `@CreatedBy`: el `AuditorAware` placeholder lo sobrescribiría con el UUID de sistema, así que `DocumentService` lo setea explícitamente con el actor real (memberId del principal JWT u `ownerUserId` del body para keys SERVICE). El schema público no usa who-columns.
+- **Requisito futuro**: reemplazar `AuditorAwareImpl` por un `AuditorAware` que lea el `tenant_member.id` autenticado antes de poblar `@CreatedBy` con datos reales (afecta a `folder.created_by`).
 
 ### Ejemplo de estructura esperada
 

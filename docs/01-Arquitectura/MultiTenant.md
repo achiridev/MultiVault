@@ -6,7 +6,10 @@ Documentar la estrategia de multi-tenancy del sistema, que utiliza aislamiento f
 
 ## Estado actual
 
-La estrategia está definida en los esquemas SQL y **implementada en la capa de aplicación**: el flujo de aprovisionamiento crea el schema físico y migra el template por tenant al crear una organización (ADR-0004).
+La estrategia está definida en los esquemas SQL e **implementada en la capa de aplicación** en dos planos:
+
+1. **Aprovisionamiento**: el flujo de onboarding crea el schema físico y migra el template por tenant (ADR-0004).
+2. **Enrutamiento en runtime** (ADR-0009): las consultas JPA caen en el schema del tenant vía `hibernate.multiTenancy=SCHEMA` con `SET search_path` sobre un pool único (HikariCP). Implementado por `TenantContext` (ThreadLocal), `CurrentTenantIdentifierResolverImpl`, `MultiTenantConnectionProviderImpl` y `TenantContextFilter`.
 
 ## Información encontrada
 
@@ -62,17 +65,26 @@ Límite de 63 caracteres (límite de identificadores PostgreSQL).
 - Las conexiones JDBC usan `search_path` para apuntar al schema correcto
 - No hay riesgo de fuga de datos entre tenants a nivel de base de datos
 
+### Enrutamiento en runtime (ADR-0009)
+
+- `TenantContext` (ThreadLocal) guarda el `schema_name` del request actual (`infrastructure/persistence/tenant/TenantContext`).
+- `TenantContextFilter` (`OncePerRequestFilter`, registrado **después** de los filtros JWT/API key) lee el principal (`TenantUserPrincipal.tenantId` o `ApiKeyPrincipal.tenantId`), resuelve el schema vía `TenantSchemaResolver` (lookup `tenant.schema_name` por `TenantRepository`, 404 si el tenant no existe) y lo setea en `TenantContext`; limpia el contexto en `finally`.
+- Requests sin autenticación (p.ej. `POST /api/v1/tenants`) o sin tenant → contexto vacío. El resolver de Hibernate mapea ese caso al identificador sentinela `public` (Hibernate 7 exige un identificador **no nulo** al abrir una Session); el connection provider trata `public` como la conexión `any` (sin `SET search_path`).
+- `MultiTenantConnectionProviderImpl.selectConnectionProvider(schema)` entrega una conexión del pool único con `SET search_path TO "<schema>"` (schema validado por regex al crearse; comillas escapadas igualmente). Al liberar (`releaseConnection`) ejecuta `SET search_path TO public` para no fugar el schema del tenant en el pool. `supportsAggressiveRelease()` → `false`.
+- Las tablas públicas se cualifican explícitamente con `@Table(schema = "public")` (no dependen del `search_path`); las tablas por-tenant se dejan sin schema y resuelven vía `search_path`.
+- `TenantSchemaProvisioner` y Flyway usan el DataSource directo (no Hibernate) → no se ven afectados por el multi-tenancy.
+
 ## Pendientes
 
-- [ ] Implementar `TenantContext` holder (ThreadLocal) para mantener el tenant actual en cada request
-- [ ] Implementar filtro/middleware que resuelva el tenant desde el request (dominio, header, JWT)
-- [ ] Implementar `TenantConnectionProvider` o `MultiTenantConnectionProvider` para Hibernate
+- [x] Implementar `TenantContext` holder (ThreadLocal) para mantener el tenant actual en cada request
+- [x] Implementar filtro/middleware que resuelva el tenant desde el request (JWT/API key) — `TenantContextFilter`
+- [x] Implementar `MultiTenantConnectionProvider` para Hibernate (`search_path` sobre pool único, ADR-0009)
 - [x] Implementar servicio de aprovisionamiento de nuevos tenants (crear schema, ejecutar tenant_schema.sql) — ADR-0004
 - [ ] Implementar lógica de suspensión/cancelación de tenants
 - [x] Agregar migraciones Flyway para schemas de tenant — `db/tenant/V1__tenant_schema.sql`, `db/tenant/V2__fix_document_owner_permission_trigger.sql`
 
 ## Preguntas abiertas
 
-- ¿Cómo se resuelve el tenant en cada request? ¿Por subdominio (`tenant1.app.com`), header (`X-Tenant-ID`), o del JWT?
-- ¿Se usará un pool de conexiones por tenant o un pool único con `search_path` dinámico?
+- ~~¿Cómo se resuelve el tenant en cada request?~~ → **Resuelto:** desde el principal de seguridad (`TenantUserPrincipal.tenantId` para JWT, `ApiKeyPrincipal.tenantId` para API key), vía `TenantContextFilter` (ADR-0009)
+- ~~¿Pool por tenant o pool único con search_path?~~ → **Resuelto:** pool único con `search_path` dinámico (ADR-0009)
 - ¿Cómo se reintenta un tenant con `status = 'SUSPENDED'` por fallo de aprovisionamiento (retry manual o automático)?

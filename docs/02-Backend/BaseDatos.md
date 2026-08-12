@@ -64,6 +64,8 @@ FOR EACH ROW EXECUTE FUNCTION fn_document_owner_permission();
 
 V1 definía `fn_document_owner_permission` referenciando `document_permission` sin calificar: la función depende del `search_path` de la conexión al ejecutarse. V2 la reemplaza y resuelve el schema desde la propia tabla del trigger (`TG_RELID` + `pg_namespace`), con `EXECUTE format(...) USING ...` — funciona con cualquier `search_path` (detectado por el test de integración).
 
+Las consultas JPA se enrutan al schema del tenant en runtime con `search_path` sobre pool único (ADR-0009): Hibernate usa `hibernate.multiTenancy=SCHEMA` + `SET search_path` por conexión (configurado programáticamente en `MultiTenantJpaConfig`, no en `application.yaml`), con `TenantContext` (ThreadLocal) y `TenantContextFilter`. No hubo cambios de schema en esta fase.
+
 ### Convenciones generales
 
 - **UUIDs:** Todas las PKs usan `UUID` con `DEFAULT gen_random_uuid()` (requiere extensión `pgcrypto`)
