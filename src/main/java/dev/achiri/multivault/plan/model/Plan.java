@@ -10,7 +10,7 @@ import lombok.Getter;
 import lombok.Setter;
 
 @Entity
-@Table(name = "plan")
+@Table(name = "plan", schema = "public")
 @Getter
 @Setter
 public class Plan extends DateAudit {

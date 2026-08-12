@@ -11,7 +11,7 @@ import java.time.Instant;
 import java.util.UUID;
 
 @Entity
-@Table(name = "tenant_member")
+@Table(name = "tenant_member", schema = "public")
 @Getter
 @Setter
 public class TenantMember extends BaseEntity {

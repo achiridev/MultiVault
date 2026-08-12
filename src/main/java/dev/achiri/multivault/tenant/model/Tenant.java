@@ -13,7 +13,7 @@ import java.time.Instant;
 import java.util.UUID;
 
 @Entity
-@Table(name = "tenant")
+@Table(name = "tenant", schema = "public")
 @Getter
 @Setter
 public class Tenant extends DateAudit {

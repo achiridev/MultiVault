@@ -1,5 +1,6 @@
 package dev.achiri.multivault.infrastructure.security.config;
 
+import dev.achiri.multivault.infrastructure.persistence.tenant.TenantContextFilter;
 import dev.achiri.multivault.infrastructure.security.apikey.ApiKeyAuthenticationFilter;
 import dev.achiri.multivault.infrastructure.security.handler.RestAuthenticationEntryPoint;
 import dev.achiri.multivault.infrastructure.security.jwt.JwtAuthenticationFilter;
@@ -19,6 +20,7 @@ public class SecurityConfig {
     @Bean
     SecurityFilterChain securityFilterChain(HttpSecurity http, ApiKeyAuthenticationFilter apiKeyAuthenticationFilter,
                                             JwtAuthenticationFilter jwtAuthenticationFilter,
+                                            TenantContextFilter tenantContextFilter,
                                             RestAuthenticationEntryPoint restAuthenticationEntryPoint) throws Exception {
         http
                 .csrf(csrf -> csrf.disable())
@@ -28,7 +30,8 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.POST, "/api/v1/tenants").permitAll()
                         .anyRequest().authenticated())
                 .addFilterBefore(apiKeyAuthenticationFilter, UsernamePasswordAuthenticationFilter.class)
-                .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
+                .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class)
+                .addFilterAfter(tenantContextFilter, JwtAuthenticationFilter.class);
         return http.build();
     }
 }

@@ -19,7 +19,7 @@ import java.util.List;
 import java.util.UUID;
 
 @Entity
-@Table(name = "tenant_identity_provider")
+@Table(name = "tenant_identity_provider", schema = "public")
 @Getter
 @Setter
 @EntityListeners(AuditingEntityListener.class)

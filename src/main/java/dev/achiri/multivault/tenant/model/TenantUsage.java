@@ -14,7 +14,7 @@ import java.time.Instant;
 import java.util.UUID;
 
 @Entity
-@Table(name = "tenant_usage")
+@Table(name = "tenant_usage", schema = "public")
 @Getter
 @Setter
 @EntityListeners(AuditingEntityListener.class)

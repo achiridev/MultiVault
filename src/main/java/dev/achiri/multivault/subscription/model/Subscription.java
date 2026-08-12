@@ -13,7 +13,7 @@ import java.time.Instant;
 import java.util.UUID;
 
 @Entity
-@Table(name = "subscription")
+@Table(name = "subscription", schema = "public")
 @Getter
 @Setter
 public class Subscription extends DateAudit {

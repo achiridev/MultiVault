@@ -20,7 +20,7 @@ import java.util.List;
 import java.util.UUID;
 
 @Entity
-@Table(name = "api_key")
+@Table(name = "api_key", schema = "public")
 @Getter
 @Setter
 @EntityListeners(AuditingEntityListener.class)
