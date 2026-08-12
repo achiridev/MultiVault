@@ -9,7 +9,6 @@ import lombok.Getter;
 import lombok.Setter;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
-import org.springframework.data.annotation.CreatedBy;
 import org.springframework.data.annotation.CreatedDate;
 import org.springframework.data.jpa.domain.support.AuditingEntityListener;
 import tools.jackson.databind.JsonNode;
@@ -50,7 +49,6 @@ public class DocumentVersion extends BaseEntity {
     @Column(name = "metadata", nullable = false)
     private JsonNode metadata = JsonNodeFactory.instance.objectNode();
 
-    @CreatedBy
     @Column(name = "created_by", nullable = false, updatable = false)
     private UUID createdBy;
 
