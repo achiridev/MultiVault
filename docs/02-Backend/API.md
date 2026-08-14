@@ -74,7 +74,7 @@ Request:
 
 Los endpoints de documentos operan sobre el schema del tenant resuelto desde el principal autenticado (JWT o API key SERVICE). El contenido binario **no** se sube aún: los endpoints crean metadatos y la app genera el `storageKey` (`{schema}/{documentId}/{versionNumber}/{checksum}`); la subida/descarga queda pendiente de un ADR de storage.
 
-El actor (`owner_user_id` del documento y `created_by` de cada versión) se resuelve así: con JWT → `memberId` del principal; con API key `SERVICE` → `ownerUserId` **obligatorio** en el body (400 si falta). Al crear el documento, el trigger DB `trg_document_owner_permission` crea automáticamente la fila OWNER en `document_permission`.
+El actor (`owner_user_id` del documento y `created_by` de cada versión) se resuelve así: con JWT → `memberId` del principal; con API key `SERVICE` → `ownerUserId` **obligatorio** en el body (400 si falta). Al crear el documento, el trigger DB `trg_document_owner_permission` crea automáticamente la fila OWNER en `document_permission`. Las escrituras registran auditoría en `public.audit_log` (patrón ADR-0003): `DOCUMENT_CREATED` (recurso `document`) y `DOCUMENT_VERSION_UPLOADED` (recurso `document_version`), con `actor_type`/`api_key_id` según el principal, IP y User-Agent del request, y metadata con nombre y `version_number`. Las lecturas no se auditan.
 
 #### POST `/api/v1/documents` — Crear documento (implementado)
 

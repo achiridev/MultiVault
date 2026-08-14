@@ -23,6 +23,7 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -65,6 +66,7 @@ class DocumentFlowIntegrationTest extends BaseIntegrationTest {
 
     private final List<UUID> tenantIds = new java.util.ArrayList<>();
     private final List<String> schemaNames = new java.util.ArrayList<>();
+    private UUID serviceKeyId;
 
     @AfterEach
     void tearDown() {
@@ -77,7 +79,8 @@ class DocumentFlowIntegrationTest extends BaseIntegrationTest {
 
     @Test
     void createsDocumentWithVersionAndOwnerPermission() throws Exception {
-        String schema = createTenant("Acme Docs", "sub_docs_a").tenant().schemaName();
+        CreateTenantResponse tenant = createTenant("Acme Docs", "sub_docs_a");
+        String schema = tenant.tenant().schemaName();
         String serviceKey = createServiceKey();
         UUID ownerUserId = UUID.randomUUID();
 
@@ -124,11 +127,26 @@ class DocumentFlowIntegrationTest extends BaseIntegrationTest {
                         + "WHERE document_id = ? AND permission_level = 'OWNER' AND user_id = ?",
                 Integer.class, documentId, ownerUserId);
         assertThat(ownerPermissions).isEqualTo(1);
+
+        List<Map<String, Object>> auditRows = jdbcTemplate.queryForList(
+                "SELECT action, actor_user_id, api_key_id, resource_id FROM public.audit_log "
+                        + "WHERE tenant_id = ? AND action = 'DOCUMENT_CREATED'",
+                tenant.tenant().id());
+        assertThat(auditRows).hasSize(1);
+        assertThat(auditRows.getFirst().get("actor_user_id")).isEqualTo(ownerUserId);
+        assertThat(auditRows.getFirst().get("api_key_id")).isEqualTo(serviceKeyId);
+        assertThat(auditRows.getFirst().get("resource_id")).isEqualTo(documentId);
+
+        String documentName = jdbcTemplate.queryForObject(
+                "SELECT metadata ->> 'document_name' FROM public.audit_log WHERE tenant_id = ? AND action = 'DOCUMENT_CREATED'",
+                String.class, tenant.tenant().id());
+        assertThat(documentName).isEqualTo("Contract.pdf");
     }
 
     @Test
     void addsImmutableVersionAndRepointsCurrent() throws Exception {
-        String schema = createTenant("Acme Versions", "sub_docs_v").tenant().schemaName();
+        CreateTenantResponse tenant = createTenant("Acme Versions", "sub_docs_v");
+        String schema = tenant.tenant().schemaName();
         String serviceKey = createServiceKey();
         UUID ownerUserId = UUID.randomUUID();
 
@@ -149,7 +167,7 @@ class DocumentFlowIntegrationTest extends BaseIntegrationTest {
         UUID documentId = UUID.fromString(body(createResult).get("id").asText());
         UUID firstVersionId = UUID.fromString(body(createResult).path("currentVersion").get("id").asText());
 
-        mockMvc.perform(post("/api/v1/documents/{documentId}/versions", documentId)
+        MvcResult versionResult = mockMvc.perform(post("/api/v1/documents/{documentId}/versions", documentId)
                         .header(AUTHORIZATION, "Bearer " + serviceKey)
                         .contentType(APPLICATION_JSON)
                         .content("""
@@ -163,7 +181,9 @@ class DocumentFlowIntegrationTest extends BaseIntegrationTest {
                                 """.formatted(checksum(), ownerUserId)))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.versionNumber").value(2))
-                .andExpect(jsonPath("$.name").value("Draft_v2.pdf"));
+                .andExpect(jsonPath("$.name").value("Draft_v2.pdf"))
+                .andReturn();
+        UUID versionId = UUID.fromString(body(versionResult).get("id").asText());
 
         Integer versionCount = jdbcTemplate.queryForObject(
                 "SELECT COUNT(*) FROM " + schema + ".document_version WHERE document_id = ?",
@@ -181,6 +201,23 @@ class DocumentFlowIntegrationTest extends BaseIntegrationTest {
                         + "WHERE d.id = ? AND dv.version_number = 2",
                 Integer.class, documentId);
         assertThat(repointed).isEqualTo(1);
+
+        List<Map<String, Object>> auditRows = jdbcTemplate.queryForList(
+                "SELECT action, actor_user_id, api_key_id, resource_id FROM public.audit_log "
+                        + "WHERE tenant_id = ? AND action IN ('DOCUMENT_CREATED', 'DOCUMENT_VERSION_UPLOADED') "
+                        + "ORDER BY created_at",
+                tenant.tenant().id());
+        assertThat(auditRows).extracting(row -> row.get("action"))
+                .containsExactly("DOCUMENT_CREATED", "DOCUMENT_VERSION_UPLOADED");
+        assertThat(auditRows.getFirst().get("actor_user_id")).isEqualTo(ownerUserId);
+        assertThat(auditRows.getFirst().get("api_key_id")).isEqualTo(serviceKeyId);
+        assertThat(auditRows.getLast().get("resource_id")).isEqualTo(versionId);
+
+        String versionNumber = jdbcTemplate.queryForObject(
+                "SELECT metadata ->> 'version_number' FROM public.audit_log "
+                        + "WHERE tenant_id = ? AND action = 'DOCUMENT_VERSION_UPLOADED'",
+                String.class, tenant.tenant().id());
+        assertThat(versionNumber).isEqualTo("2");
     }
 
     @Test
@@ -265,6 +302,7 @@ class DocumentFlowIntegrationTest extends BaseIntegrationTest {
         key.setScopes(List.of("documents:write", "documents:read"));
         key.setCreatedByUserId(UUID.randomUUID());
         apiKeyRepository.saveAndFlush(key);
+        serviceKeyId = key.getId();
         return rawKey;
     }
 

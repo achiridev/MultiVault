@@ -1,11 +1,13 @@
 package dev.achiri.multivault.document.controller;
 
+import dev.achiri.multivault.audit.event.AuditContext;
+import dev.achiri.multivault.audit.event.AuditContextResolver;
 import dev.achiri.multivault.document.dto.CreateDocumentRequest;
 import dev.achiri.multivault.document.dto.CreateDocumentVersionRequest;
 import dev.achiri.multivault.document.dto.DocumentResponse;
 import dev.achiri.multivault.document.dto.DocumentVersionResponse;
 import dev.achiri.multivault.document.service.DocumentService;
-import dev.achiri.multivault.infrastructure.security.jwt.model.TenantUserPrincipal;
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
@@ -26,40 +28,35 @@ import java.util.UUID;
 public class DocumentController {
 
     private final DocumentService documentService;
+    private final AuditContextResolver auditContextResolver;
 
     @PostMapping
     public ResponseEntity<DocumentResponse> create(
             @Valid @RequestBody CreateDocumentRequest request,
-            Authentication authentication) {
-        UUID ownerUserId = resolveActorUserId(request.ownerUserId(), authentication);
+            Authentication authentication,
+            HttpServletRequest httpRequest) {
+        AuditContext auditContext = auditContextResolver.resolve(
+                request.ownerUserId(), authentication, httpRequest);
         return ResponseEntity
                 .status(HttpStatus.CREATED)
-                .body(documentService.create(request, ownerUserId));
+                .body(documentService.create(request, auditContext));
     }
 
     @PostMapping("/{documentId}/versions")
     public ResponseEntity<DocumentVersionResponse> addVersion(
             @PathVariable UUID documentId,
             @Valid @RequestBody CreateDocumentVersionRequest request,
-            Authentication authentication) {
-        UUID createdBy = resolveActorUserId(request.ownerUserId(), authentication);
+            Authentication authentication,
+            HttpServletRequest httpRequest) {
+        AuditContext auditContext = auditContextResolver.resolve(
+                request.ownerUserId(), authentication, httpRequest);
         return ResponseEntity
                 .status(HttpStatus.CREATED)
-                .body(documentService.addVersion(documentId, request, createdBy));
+                .body(documentService.addVersion(documentId, request, auditContext));
     }
 
     @GetMapping("/{documentId}")
     public ResponseEntity<DocumentResponse> get(@PathVariable UUID documentId) {
         return ResponseEntity.ok(documentService.get(documentId));
-    }
-
-    private UUID resolveActorUserId(UUID bodyUserId, Authentication authentication) {
-        if (authentication != null && authentication.getPrincipal() instanceof TenantUserPrincipal tenantUser) {
-            return tenantUser.memberId();
-        }
-        if (bodyUserId == null) {
-            throw new IllegalArgumentException("ownerUserId es requerido para API keys SERVICE");
-        }
-        return bodyUserId;
     }
 }

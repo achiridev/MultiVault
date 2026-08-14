@@ -1,5 +1,8 @@
 package dev.achiri.multivault.document.service;
 
+import dev.achiri.multivault.audit.event.AuditContext;
+import dev.achiri.multivault.audit.event.AuditEvent;
+import dev.achiri.multivault.audit.event.AuditEventPublisher;
 import dev.achiri.multivault.common.exception.RecursoNoEncontradoException;
 import dev.achiri.multivault.document.dto.CreateDocumentRequest;
 import dev.achiri.multivault.document.dto.CreateDocumentVersionRequest;
@@ -16,6 +19,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.Map;
 import java.util.UUID;
 
 @Service
@@ -25,26 +29,40 @@ public class DocumentService {
     private final DocumentRepository documentRepository;
     private final DocumentVersionRepository documentVersionRepository;
     private final DocumentMapper documentMapper;
+    private final AuditEventPublisher auditEventPublisher;
 
     @Transactional
-    public DocumentResponse create(CreateDocumentRequest request, UUID ownerUserId) {
+    public DocumentResponse create(CreateDocumentRequest request, AuditContext auditContext) {
         Document document = new Document();
         document.setFolderId(request.folderId());
-        document.setOwnerUserId(ownerUserId);
+        document.setOwnerUserId(auditContext.actorUserId());
         document.setStatus(DocumentStatus.ACTIVE);
         document = documentRepository.save(document);
 
         DocumentVersion version = saveVersion(
-                document.getId(), ownerUserId, 1, request.name(), request.mimeType(), request.sizeBytes(),
+                document.getId(), auditContext.actorUserId(), 1, request.name(), request.mimeType(), request.sizeBytes(),
                 request.checksum());
         document.setCurrentVersionId(version.getId());
         documentRepository.save(document);
+
+        auditEventPublisher.publish(AuditEvent.builder()
+                .tenantId(auditContext.tenantId())
+                .actorUserId(auditContext.actorUserId())
+                .apiKeyId(auditContext.apiKeyId())
+                .actorType(auditContext.actorType())
+                .action("DOCUMENT_CREATED")
+                .resourceType("document")
+                .resourceId(document.getId())
+                .ipAddress(auditContext.ipAddress())
+                .userAgent(auditContext.userAgent())
+                .metadata(Map.of("document_name", request.name(), "version_number", 1))
+                .build());
 
         return documentMapper.toResponse(document, version);
     }
 
     @Transactional
-    public DocumentVersionResponse addVersion(UUID documentId, CreateDocumentVersionRequest request, UUID createdBy) {
+    public DocumentVersionResponse addVersion(UUID documentId, CreateDocumentVersionRequest request, AuditContext auditContext) {
         Document document = documentRepository.findByIdAndDeletedAtIsNull(documentId)
                 .orElseThrow(() -> new RecursoNoEncontradoException("document", documentId));
 
@@ -54,10 +72,26 @@ public class DocumentService {
                 .orElse(1);
 
         DocumentVersion version = saveVersion(
-                documentId, createdBy, versionNumber, request.name(), request.mimeType(), request.sizeBytes(),
+                documentId, auditContext.actorUserId(), versionNumber, request.name(), request.mimeType(), request.sizeBytes(),
                 request.checksum());
         document.setCurrentVersionId(version.getId());
         documentRepository.save(document);
+
+        auditEventPublisher.publish(AuditEvent.builder()
+                .tenantId(auditContext.tenantId())
+                .actorUserId(auditContext.actorUserId())
+                .apiKeyId(auditContext.apiKeyId())
+                .actorType(auditContext.actorType())
+                .action("DOCUMENT_VERSION_UPLOADED")
+                .resourceType("document_version")
+                .resourceId(version.getId())
+                .ipAddress(auditContext.ipAddress())
+                .userAgent(auditContext.userAgent())
+                .metadata(Map.of(
+                        "document_id", documentId.toString(),
+                        "document_name", request.name(),
+                        "version_number", versionNumber))
+                .build());
 
         return documentMapper.toVersionResponse(version);
     }
