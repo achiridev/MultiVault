@@ -87,6 +87,16 @@ public class GlobalExceptionHandler {
         return ResponseEntity.status(HttpStatus.FORBIDDEN).body(error);
     }
 
+    @ExceptionHandler(EstadoTransicionInvalidoException.class)
+    public ResponseEntity<ErrorResponse> handleEstadoTransicionInvalido(EstadoTransicionInvalidoException ex) {
+        ErrorResponse error = new ErrorResponse(
+                HttpStatus.CONFLICT.value(),
+                ex.getMessage(),
+                LocalDateTime.now()
+        );
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(error);
+    }
+
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ErrorResponse> manejarGeneral(Exception ex) {
 

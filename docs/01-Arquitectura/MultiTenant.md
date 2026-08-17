@@ -51,6 +51,31 @@ Implementado en `POST /api/v1/tenants` (ADR-0004). Tres límites transaccionales
 
 `schema_name` se genera como `mv_` + slug del `name` (vacío → 400; truncado a 63 caracteres). Un `schema_name` duplicado responde 409.
 
+### Ciclo de vida del tenant (ADR-0009)
+
+`TenantLifecycleService` gestiona las transiciones de estado vía `PUT /api/v1/tenants/{id}/status`:
+
+#### Transiciones válidas
+
+| Desde | Hacia | Efectos |
+|---|---|---|
+| `PENDING_PROVISIONING` | `CANCELLED` | Suscripción → CANCELLED, keys revocadas, miembros desactivados |
+| `PENDING_PROVISIONING` | `SUSPENDED` | Suscripción → PAST_DUE, keys revocadas, miembros desactivados |
+| `ACTIVE` | `CANCELLED` | Suscripción → CANCELLED, keys revocadas, miembros desactivados |
+| `ACTIVE` | `SUSPENDED` | Suscripción → PAST_DUE, keys revocadas, miembros desactivados |
+| `SUSPENDED` | `ACTIVE` | Suscripción → ACTIVE (reinstate). Keys NO se reactivan |
+| `SUSPENDED` | `CANCELLED` | Terminal. Suscripción → CANCELLED |
+
+`CANCELLED` es terminal: no admite transiciones.
+
+#### Reglas de negocio
+
+- **Cancelación = permanente.** No hay reactivación.
+- **Suspensión = reversible.** Reinstate solo desde `SUSPENDED`.
+- Al cancelar/suspender: API keys se revocan (`revoked_at`), miembros se desactivan (`is_active = false`).
+- Al reinstatar: la suscripción vuelve a `ACTIVE`, pero las API keys no se reactivan (el usuario debe crear nuevas).
+- `EstadoTransicionInvalidoException` → `409 Conflict` para transiciones inválidas.
+
 ### Validación de schema_name
 
 ```sql
@@ -80,7 +105,7 @@ Límite de 63 caracteres (límite de identificadores PostgreSQL).
 - [x] Implementar filtro/middleware que resuelva el tenant desde el request (JWT/API key) — `TenantContextFilter`
 - [x] Implementar `MultiTenantConnectionProvider` para Hibernate (`search_path` sobre pool único, ADR-0009)
 - [x] Implementar servicio de aprovisionamiento de nuevos tenants (crear schema, ejecutar tenant_schema.sql) — ADR-0004
-- [ ] Implementar lógica de suspensión/cancelación de tenants
+- [x] Implementar lógica de suspensión/cancelación de tenants — ADR-0009
 - [x] Agregar migraciones Flyway para schemas de tenant — `db/tenant/V1__tenant_schema.sql`, `db/tenant/V2__fix_document_owner_permission_trigger.sql`
 
 ## Preguntas abiertas

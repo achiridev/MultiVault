@@ -70,6 +70,51 @@ Request:
 
 `allowedAlgorithms` y `clockSkewSeconds` opcionales con defaults (`RS256` / `60`).
 
+### PUT `/api/v1/tenants/{tenantId}/status` — Actualizar estado del tenant (implementado)
+
+Cambia el estado de un tenant. Valida transiciones permitidas (ADR-0009). `404` si el tenant no existe; `400` con body inválido; `409` si la transición no es válida; `200` con el DTO de estado actualizado.
+
+**Transiciones válidas:**
+
+| Desde | Hacia |
+|---|---|
+| `PENDING_PROVISIONING` | `CANCELLED`, `SUSPENDED` |
+| `ACTIVE` | `CANCELLED`, `SUSPENDED` |
+| `SUSPENDED` | `ACTIVE` (reinstate), `CANCELLED` |
+| `CANCELLED` | *(ninguna — terminal)* |
+
+**Efectos por operación:**
+
+| Operación | Suscripción | API Keys | Miembros |
+|---|---|---|---|
+| `CANCEL` | `CANCELLED` + `cancelled_at` | Revocadas | Desactivados |
+| `SUSPEND` | `PAST_DUE` | Revocadas | Desactivados |
+| `REINSTATE` | `ACTIVE` | No reactivadas (crear nuevas) | No reactivados |
+
+Request:
+```json
+{
+  "status": "CANCELLED",
+  "reason": "business_closed"
+}
+```
+
+`reason` opcional. Para `REINSTATE` se ignora.
+
+Response `200 OK`:
+```json
+{
+  "id": "...",
+  "name": "Acme Inc",
+  "previousStatus": "ACTIVE",
+  "currentStatus": "CANCELLED",
+  "suspendedAt": null,
+  "suspendedReason": null
+}
+```
+
+Auditoría: `TENANT_CANCELLED`, `TENANT_SUSPENDED`, `TENANT_REINSTATED`.
+
 ### Documentos (scope del tenant) — implementado
 
 Los endpoints de documentos operan sobre el schema del tenant resuelto desde el principal autenticado (JWT o API key SERVICE). El contenido binario **no** se sube aún: los endpoints crean metadatos y la app genera el `storageKey` (`{schema}/{documentId}/{versionNumber}/{checksum}`); la subida/descarga queda pendiente de un ADR de storage.
@@ -143,10 +188,11 @@ Existen controladores REST (`TenantController` en `/api/v1/tenants`) sobre Servl
 |---|---|---|
 | POST | `/api/v1/tenants` | Crear nuevo tenant |
 | PUT | `/api/v1/tenants/{id}/identity-provider` | Actualizar identity provider |
+| PUT | `/api/v1/tenants/{id}/status` | ✅ Actualizar estado (cancel/suspend/reinstate) |
 | GET | `/api/v1/tenants/{id}` | Obtener tenant |
 | GET | `/api/v1/tenants` | Listar tenants |
 | PATCH | `/api/v1/tenants/{id}` | Actualizar tenant |
-| DELETE | `/api/v1/tenants/{id}` | Cancelar/suspender tenant |
+| DELETE | `/api/v1/tenants/{id}` | Eliminar tenant |
 
 #### Autenticación
 | Método | Path | Descripción |

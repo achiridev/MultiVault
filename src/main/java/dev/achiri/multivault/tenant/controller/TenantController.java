@@ -2,7 +2,10 @@ package dev.achiri.multivault.tenant.controller;
 
 import dev.achiri.multivault.tenant.dto.CreateTenantRequest;
 import dev.achiri.multivault.tenant.dto.CreateTenantResponse;
+import dev.achiri.multivault.tenant.dto.TenantStatusResponse;
 import dev.achiri.multivault.tenant.dto.UpdateTenantIdentityProviderRequest;
+import dev.achiri.multivault.tenant.dto.UpdateTenantStatusRequest;
+import dev.achiri.multivault.tenant.service.TenantLifecycleService;
 import dev.achiri.multivault.tenant.service.TenantService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -22,6 +25,7 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class TenantController {
     private final TenantService tenantService;
+    private final TenantLifecycleService tenantLifecycleService;
 
     @PostMapping
     public ResponseEntity<CreateTenantResponse> create(@Valid @RequestBody CreateTenantRequest request) {
@@ -35,5 +39,12 @@ public class TenantController {
             @PathVariable UUID tenantId,
             @Valid @RequestBody UpdateTenantIdentityProviderRequest request) {
         return ResponseEntity.ok(tenantService.updateIdentityProvider(tenantId, request));
+    }
+
+    @PutMapping("/{tenantId}/status")
+    public ResponseEntity<TenantStatusResponse> updateStatus(
+            @PathVariable UUID tenantId,
+            @Valid @RequestBody UpdateTenantStatusRequest request) {
+        return ResponseEntity.ok(tenantLifecycleService.updateStatus(tenantId, request));
     }
 }
