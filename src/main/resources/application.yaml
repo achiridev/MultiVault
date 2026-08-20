@@ -32,5 +32,14 @@ spring:
   cache:
     type: redis
 
+storage:
+  backblaze-b2:
+    enabled: ${B2_ENABLED:false}
+    endpoint: ${B2_ENDPOINT:}
+    region: ${B2_REGION:}
+    access-key: ${B2_ACCESS_KEY:}
+    secret-key: ${B2_SECRET_KEY:}
+    bucket: ${B2_BUCKET:}
+
 server:
   port: ${PORT:8080}
