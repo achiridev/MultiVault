@@ -2,13 +2,31 @@
 
 ## Propósito
 
-Documentar la estrategia de almacenamiento de documentos, que combina PostgreSQL para metadatos y un sistema de object storage (S3/MinIO) para el contenido binario.
+Documentar la estrategia de almacenamiento de documentos, que combina PostgreSQL para metadatos y Backblaze B2 (compatible S3) para el contenido binario.
 
 ## Estado actual
 
-La referencia al almacenamiento externo existe únicamente en la tabla `document_version.storage_key`. No hay configuración de S3/MinIO en `application.yaml` ni dependencias en `pom.xml`.
+**Implementado.** Backblaze B2 como backend de object storage via AWS SDK v2 S3. Los endpoints de documentos (`POST /api/v1/documents`, `POST /api/v1/documents/{id}/versions`) aceptan `multipart/form-data` con el archivo binario. Checksum SHA-256 y sizeBytes se calculan server-side desde los bytes reales del archivo.
 
-## Información encontrada
+## Arquitectura de storage
+
+### Paquetes
+
+```
+infrastructure/storage/
+├── DocumentStorageService.java          ← Interfaz del puerto
+└── backblaze/
+    ├── BackblazeB2Properties.java       ← Properties: storage.backblaze-b2.*
+    ├── BackblazeB2Config.java           ← Bean S3Client/S3Presigner (condicional)
+    └── BackblazeB2StorageService.java   ← Implementación: upload/download/delete
+```
+
+### Bean condicional
+
+Los beans de storage (`S3Client`, `S3Presigner`, `BackblazeB2StorageService`) solo se crean cuando `storage.backblaze-b2.enabled=true`. Esto permite:
+- **Tests:** Sin B2 configurado, `DocumentService` requiere un `DocumentStorageService` mock (`@MockitoBean`)
+- **Desarrollo local:** Configurar `enabled=true` en `application-local.yml` con credenciales reales
+- **Producción:** Configurar via variables de entorno `B2_ENABLED=true`, `B2_ENDPOINT`, etc.
 
 ### Modelo de almacenamiento
 
@@ -18,10 +36,10 @@ CREATE TABLE document_version (
     document_id          UUID NOT NULL,
     version_number       INTEGER NOT NULL,
     name                 VARCHAR(500) NOT NULL,
-    storage_key          VARCHAR(1000) NOT NULL,  -- S3/MinIO object key
+    storage_key          VARCHAR(1000) NOT NULL,  -- B2 object key
     mime_type            VARCHAR(150) NOT NULL,
     size_bytes           BIGINT NOT NULL,
-    checksum             VARCHAR(128) NOT NULL,    -- SHA-256 hex
+    checksum             VARCHAR(128) NOT NULL,    -- SHA-256 hex (calculado server-side)
     metadata             JSONB DEFAULT '{}',
     created_by           UUID NOT NULL,
     created_by_snapshot  JSONB,
@@ -29,30 +47,61 @@ CREATE TABLE document_version (
 );
 ```
 
-- El contenido binario del documento se almacena en S3/MinIO
-- `storage_key` es la clave del objeto en el bucket
-- `checksum` (SHA-256) permite verificar integridad
-- Las versiones son inmutables: nunca se hace UPDATE del contenido
+### Flujo de upload
 
-### Versionado
+1. Controller recibe `multipart/form-data`: `file` (MultipartFile) + `name`, `mimeType`, `folderId`, `ownerUserId` (form params)
+2. Service lee bytes del archivo → calcula SHA-256 y sizeBytes server-side
+3. Crea `Document` en DB (status = ACTIVE)
+4. Calcula `storageKey`: `{schema}/{documentId}/{versionNumber}/{checksum}`
+5. Sube archivo a B2 con `DocumentStorageService.upload()`
+6. Guarda `DocumentVersion` en DB con el storageKey
+7. Repunta `current_version_id`
+8. Publica auditoría `DOCUMENT_CREATED`
 
-- Cada nuevo upload crea una fila en `document_version` con `version_number` incremental
-- `document.current_version_id` se repunta a la última versión
-- Las versiones anteriores preservan su contenido inmutables
+Si falla la subida a B2 (paso 5), la transacción completa hace rollback.
+
+### Naming del storage key
+
+```
+{schema}/{documentId}/{versionNumber}/{checksum}
+```
+
+Ejemplo: `mv_acme_inc/a1b2c3d4-.../1/e3b0c44298fc...`
+
+### Configuración
+
+**application.yaml** (producción — variables de entorno):
+```yaml
+storage:
+  backblaze-b2:
+    enabled: ${B2_ENABLED:false}
+    endpoint: ${B2_ENDPOINT:}
+    region: ${B2_REGION:}
+    access-key: ${B2_ACCESS_KEY:}
+    secret-key: ${B2_SECRET_KEY:}
+    bucket: ${B2_BUCKET:}
+```
+
+**application-local.yml** (desarrollo):
+```yaml
+storage:
+  backblaze-b2:
+    enabled: true
+    endpoint: https://s3.<region>.backblazeb2.com
+    region: us-west-004
+    access-key: <your-b2-application-key-id>
+    secret-key: <your-b2-application-key>
+    bucket: <your-bucket-name>
+```
 
 ## Pendientes
 
-- [ ] Agregar dependencia AWS SDK S3 o MinIO client a `pom.xml`
-- [ ] Configurar propiedades de conexión a S3/MinIO en `application.yaml`
-- [ ] Implementar `DocumentStorageService` para upload/download/delete
-- [ ] Decidir estructura de buckets: ¿un bucket global o uno por tenant?
-- [ ] Definir política de naming para `storage_key`
+- [x] Agregar dependencia AWS SDK S3 a `pom.xml`
+- [x] Configurar propiedades de conexión a B2 en `application.yaml`
+- [x] Implementar `DocumentStorageService` para upload/download/delete
+- [x] Definir política de naming para `storage_key`
+- [x] Checksum server-side (SHA-256 calculado desde bytes reales)
 - [ ] Implementar verificación de checksum en descargas
 - [ ] Definir TTL/limpieza de versiones eliminadas lógicamente
-
-## Preguntas abiertas
-
-- ¿Se usará AWS S3, MinIO, o ambos (S3 para producción, MinIO para desarrollo)?
-- ¿Los archivos se sirven con redirect 302 o se descargan a través del backend?
-- ¿Hay límite de tamaño por documento/versión?
-- ¿Se implementa cifrado del lado del cliente antes de subir a S3?
+- [ ] Endpoint de descarga (`GET /api/v1/documents/{id}/versions/{versionId}`)
+- [ ] Límite de tamaño por documento/versión
