@@ -7,6 +7,9 @@ import dev.achiri.multivault.apikey.model.ApiKeyType;
 import dev.achiri.multivault.apikey.repository.ApiKeyRepository;
 import dev.achiri.multivault.apikey.service.ApiKeyHasher;
 import dev.achiri.multivault.audit.repository.AuditLogRepository;
+import dev.achiri.multivault.common.exception.StorageException;
+import dev.achiri.multivault.document.service.DocumentHashUtil;
+import dev.achiri.multivault.infrastructure.storage.DocumentStorageService;
 import dev.achiri.multivault.plan.model.Plan;
 import dev.achiri.multivault.plan.repository.PlanRepository;
 import dev.achiri.multivault.support.BaseIntegrationTest;
@@ -17,8 +20,10 @@ import dev.achiri.multivault.tenant.service.TenantService;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 
@@ -27,10 +32,14 @@ import java.util.Map;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.doNothing;
+import static org.mockito.Mockito.doThrow;
 import static org.springframework.http.HttpHeaders.AUTHORIZATION;
-import static org.springframework.http.MediaType.APPLICATION_JSON;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -64,6 +73,9 @@ class DocumentFlowIntegrationTest extends BaseIntegrationTest {
     @Autowired
     private JdbcTemplate jdbcTemplate;
 
+    @MockitoBean
+    private DocumentStorageService documentStorageService;
+
     private final List<UUID> tenantIds = new java.util.ArrayList<>();
     private final List<String> schemaNames = new java.util.ArrayList<>();
     private UUID serviceKeyId;
@@ -79,23 +91,22 @@ class DocumentFlowIntegrationTest extends BaseIntegrationTest {
 
     @Test
     void createsDocumentWithVersionAndOwnerPermission() throws Exception {
+        doNothing().when(documentStorageService).upload(anyString(), any(), anyString(), anyLong());
+
         CreateTenantResponse tenant = createTenant("Acme Docs", "sub_docs_a");
         String schema = tenant.tenant().schemaName();
         String serviceKey = createServiceKey();
         UUID ownerUserId = UUID.randomUUID();
 
-        MvcResult result = mockMvc.perform(post("/api/v1/documents")
+        MockMultipartFile file = new MockMultipartFile(
+                "file", "Contract.pdf", "application/pdf", "test content".getBytes());
+
+        MvcResult result = mockMvc.perform(multipart("/api/v1/documents")
+                        .file(file)
                         .header(AUTHORIZATION, "Bearer " + serviceKey)
-                        .contentType(APPLICATION_JSON)
-                        .content("""
-                                {
-                                  "name": "Contract.pdf",
-                                  "mimeType": "application/pdf",
-                                  "sizeBytes": 2048,
-                                  "checksum": "%s",
-                                  "ownerUserId": "%s"
-                                }
-                                """.formatted(checksum(), ownerUserId)))
+                        .param("name", "Contract.pdf")
+                        .param("mimeType", "application/pdf")
+                        .param("ownerUserId", ownerUserId.toString()))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.name").value("Contract.pdf"))
                 .andExpect(jsonPath("$.status").value("ACTIVE"))
@@ -115,11 +126,13 @@ class DocumentFlowIntegrationTest extends BaseIntegrationTest {
                 UUID.class, documentId);
         assertThat(currentVersionId).isNotNull();
 
+        String storedChecksum = DocumentHashUtil.sha256Hex("test content".getBytes());
+
         Integer versionCount = jdbcTemplate.queryForObject(
                 "SELECT COUNT(*) FROM " + schema + ".document_version "
                         + "WHERE document_id = ? AND version_number = 1 AND created_by = ? AND storage_key = ?",
                 Integer.class, documentId, ownerUserId,
-                schema + "/" + documentId + "/1/" + checksum());
+                schema + "/" + documentId + "/1/" + storedChecksum);
         assertThat(versionCount).isEqualTo(1);
 
         Integer ownerPermissions = jdbcTemplate.queryForObject(
@@ -145,40 +158,36 @@ class DocumentFlowIntegrationTest extends BaseIntegrationTest {
 
     @Test
     void addsImmutableVersionAndRepointsCurrent() throws Exception {
+        doNothing().when(documentStorageService).upload(anyString(), any(), anyString(), anyLong());
+
         CreateTenantResponse tenant = createTenant("Acme Versions", "sub_docs_v");
         String schema = tenant.tenant().schemaName();
         String serviceKey = createServiceKey();
         UUID ownerUserId = UUID.randomUUID();
 
-        MvcResult createResult = mockMvc.perform(post("/api/v1/documents")
+        MockMultipartFile file = new MockMultipartFile(
+                "file", "Draft.pdf", "application/pdf", "draft v1".getBytes());
+
+        MvcResult createResult = mockMvc.perform(multipart("/api/v1/documents")
+                        .file(file)
                         .header(AUTHORIZATION, "Bearer " + serviceKey)
-                        .contentType(APPLICATION_JSON)
-                        .content("""
-                                {
-                                  "name": "Draft.pdf",
-                                  "mimeType": "application/pdf",
-                                  "sizeBytes": 1024,
-                                  "checksum": "%s",
-                                  "ownerUserId": "%s"
-                                }
-                                """.formatted(checksum(), ownerUserId)))
+                        .param("name", "Draft.pdf")
+                        .param("mimeType", "application/pdf")
+                        .param("ownerUserId", ownerUserId.toString()))
                 .andExpect(status().isCreated())
                 .andReturn();
         UUID documentId = UUID.fromString(body(createResult).get("id").asText());
         UUID firstVersionId = UUID.fromString(body(createResult).path("currentVersion").get("id").asText());
 
-        MvcResult versionResult = mockMvc.perform(post("/api/v1/documents/{documentId}/versions", documentId)
+        MockMultipartFile fileV2 = new MockMultipartFile(
+                "file", "Draft_v2.pdf", "application/pdf", "draft v2 content".getBytes());
+
+        MvcResult versionResult = mockMvc.perform(multipart("/api/v1/documents/{documentId}/versions", documentId)
+                        .file(fileV2)
                         .header(AUTHORIZATION, "Bearer " + serviceKey)
-                        .contentType(APPLICATION_JSON)
-                        .content("""
-                                {
-                                  "name": "Draft_v2.pdf",
-                                  "mimeType": "application/pdf",
-                                  "sizeBytes": 4096,
-                                  "checksum": "%s",
-                                  "ownerUserId": "%s"
-                                }
-                                """.formatted(checksum(), ownerUserId)))
+                        .param("name", "Draft_v2.pdf")
+                        .param("mimeType", "application/pdf")
+                        .param("ownerUserId", ownerUserId.toString()))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.versionNumber").value(2))
                 .andExpect(jsonPath("$.name").value("Draft_v2.pdf"))
@@ -191,7 +200,7 @@ class DocumentFlowIntegrationTest extends BaseIntegrationTest {
         assertThat(versionCount).isEqualTo(2);
 
         Integer firstVersionIntact = jdbcTemplate.queryForObject(
-                "SELECT COUNT(*) FROM " + schema + ".document_version WHERE id = ? AND version_number = 1 AND size_bytes = 1024",
+                "SELECT COUNT(*) FROM " + schema + ".document_version WHERE id = ? AND version_number = 1 AND size_bytes = 8",
                 Integer.class, firstVersionId);
         assertThat(firstVersionIntact).isEqualTo(1);
 
@@ -222,24 +231,23 @@ class DocumentFlowIntegrationTest extends BaseIntegrationTest {
 
     @Test
     void getIsScopedToRequestTenant() throws Exception {
+        doNothing().when(documentStorageService).upload(anyString(), any(), anyString(), anyLong());
+
         String schemaA = createTenant("Acme Scope A", "sub_scope_a").tenant().schemaName();
         String keyA = createServiceKey();
         createTenant("Acme Scope B", "sub_scope_b");
         String keyB = createServiceKey();
         UUID ownerUserId = UUID.randomUUID();
 
-        MvcResult createResult = mockMvc.perform(post("/api/v1/documents")
+        MockMultipartFile file = new MockMultipartFile(
+                "file", "Secret.pdf", "application/pdf", "secret content".getBytes());
+
+        MvcResult createResult = mockMvc.perform(multipart("/api/v1/documents")
+                        .file(file)
                         .header(AUTHORIZATION, "Bearer " + keyA)
-                        .contentType(APPLICATION_JSON)
-                        .content("""
-                                {
-                                  "name": "Secret.pdf",
-                                  "mimeType": "application/pdf",
-                                  "sizeBytes": 128,
-                                  "checksum": "%s",
-                                  "ownerUserId": "%s"
-                                }
-                                """.formatted(checksum(), ownerUserId)))
+                        .param("name", "Secret.pdf")
+                        .param("mimeType", "application/pdf")
+                        .param("ownerUserId", ownerUserId.toString()))
                 .andExpect(status().isCreated())
                 .andReturn();
         UUID documentId = UUID.fromString(body(createResult).get("id").asText());
@@ -264,18 +272,209 @@ class DocumentFlowIntegrationTest extends BaseIntegrationTest {
         createTenant("Acme No Owner", "sub_no_owner");
         String serviceKey = createServiceKey();
 
-        mockMvc.perform(post("/api/v1/documents")
+        MockMultipartFile file = new MockMultipartFile(
+                "file", "Orphan.pdf", "application/pdf", "content".getBytes());
+
+        mockMvc.perform(multipart("/api/v1/documents")
+                        .file(file)
                         .header(AUTHORIZATION, "Bearer " + serviceKey)
-                        .contentType(APPLICATION_JSON)
-                        .content("""
-                                {
-                                  "name": "Orphan.pdf",
-                                  "mimeType": "application/pdf",
-                                  "sizeBytes": 512,
-                                  "checksum": "%s"
-                                }
-                                """.formatted(checksum())))
+                        .param("name", "Orphan.pdf")
+                        .param("mimeType", "application/pdf"))
                 .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void uploadFailureRollsBackTransaction() throws Exception {
+        doThrow(new StorageException("B2 upload failed"))
+                .when(documentStorageService).upload(anyString(), any(), anyString(), anyLong());
+
+        createTenant("Acme Rollback", "sub_rollback");
+        String serviceKey = createServiceKey();
+        UUID ownerUserId = UUID.randomUUID();
+
+        MockMultipartFile file = new MockMultipartFile(
+                "file", "Fail.pdf", "application/pdf", "content".getBytes());
+
+        mockMvc.perform(multipart("/api/v1/documents")
+                        .file(file)
+                        .header(AUTHORIZATION, "Bearer " + serviceKey)
+                        .param("name", "Fail.pdf")
+                        .param("mimeType", "application/pdf")
+                        .param("ownerUserId", ownerUserId.toString()))
+                .andExpect(status().isInternalServerError());
+
+        String schema = tenantIds.isEmpty() ? null :
+                jdbcTemplate.queryForObject(
+                        "SELECT schema_name FROM public.tenant WHERE id = ?",
+                        String.class, tenantIds.getLast());
+
+        Integer documentCount = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM " + schema + ".document",
+                Integer.class);
+        assertThat(documentCount).isEqualTo(0);
+
+        Integer versionCount = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM " + schema + ".document_version",
+                Integer.class);
+        assertThat(versionCount).isEqualTo(0);
+    }
+
+    @Test
+    void usesFileOriginalFilenameWhenNameOmitted() throws Exception {
+        doNothing().when(documentStorageService).upload(anyString(), any(), anyString(), anyLong());
+
+        createTenant("Acme Filename", "sub_filename");
+        String serviceKey = createServiceKey();
+        UUID ownerUserId = UUID.randomUUID();
+
+        MockMultipartFile file = new MockMultipartFile(
+                "file", "OriginalName.pdf", "application/pdf", "content".getBytes());
+
+        MvcResult result = mockMvc.perform(multipart("/api/v1/documents")
+                        .file(file)
+                        .header(AUTHORIZATION, "Bearer " + serviceKey)
+                        .param("mimeType", "application/pdf")
+                        .param("ownerUserId", ownerUserId.toString()))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.name").value("OriginalName.pdf"))
+                .andReturn();
+    }
+
+    @Test
+    void usesFileContentTypeWhenMimeTypeOmitted() throws Exception {
+        doNothing().when(documentStorageService).upload(anyString(), any(), anyString(), anyLong());
+
+        createTenant("Acme Mime", "sub_mime");
+        String serviceKey = createServiceKey();
+        UUID ownerUserId = UUID.randomUUID();
+
+        MockMultipartFile file = new MockMultipartFile(
+                "file", "Doc.txt", "text/plain", "content".getBytes());
+
+        MvcResult result = mockMvc.perform(multipart("/api/v1/documents")
+                        .file(file)
+                        .header(AUTHORIZATION, "Bearer " + serviceKey)
+                        .param("name", "Doc.txt")
+                        .param("ownerUserId", ownerUserId.toString()))
+                .andExpect(status().isCreated())
+                .andReturn();
+
+        UUID documentId = UUID.fromString(body(result).get("id").asText());
+        String schema = tenantIds.isEmpty() ? null :
+                jdbcTemplate.queryForObject(
+                        "SELECT schema_name FROM public.tenant WHERE id = ?",
+                        String.class, tenantIds.getLast());
+
+        String storedMimeType = jdbcTemplate.queryForObject(
+                "SELECT mime_type FROM " + schema + ".document_version WHERE document_id = ?",
+                String.class, documentId);
+        assertThat(storedMimeType).isEqualTo("text/plain");
+    }
+
+    @Test
+    void checksumIsComputedServerSide() throws Exception {
+        doNothing().when(documentStorageService).upload(anyString(), any(), anyString(), anyLong());
+
+        createTenant("Acme Checksum", "sub_checksum");
+        String serviceKey = createServiceKey();
+        UUID ownerUserId = UUID.randomUUID();
+        byte[] fileBytes = "checksum test payload".getBytes();
+        String expectedChecksum = DocumentHashUtil.sha256Hex(fileBytes);
+
+        MockMultipartFile file = new MockMultipartFile(
+                "file", "Checksum.pdf", "application/pdf", fileBytes);
+
+        MvcResult result = mockMvc.perform(multipart("/api/v1/documents")
+                        .file(file)
+                        .header(AUTHORIZATION, "Bearer " + serviceKey)
+                        .param("name", "Checksum.pdf")
+                        .param("mimeType", "application/pdf")
+                        .param("ownerUserId", ownerUserId.toString()))
+                .andExpect(status().isCreated())
+                .andReturn();
+
+        UUID documentId = UUID.fromString(body(result).get("id").asText());
+        String schema = tenantIds.isEmpty() ? null :
+                jdbcTemplate.queryForObject(
+                        "SELECT schema_name FROM public.tenant WHERE id = ?",
+                        String.class, tenantIds.getLast());
+
+        String storedChecksum = jdbcTemplate.queryForObject(
+                "SELECT checksum FROM " + schema + ".document_version WHERE document_id = ?",
+                String.class, documentId);
+        assertThat(storedChecksum).isEqualTo(expectedChecksum);
+
+        Long storedSize = jdbcTemplate.queryForObject(
+                "SELECT size_bytes FROM " + schema + ".document_version WHERE document_id = ?",
+                Long.class, documentId);
+        assertThat(storedSize).isEqualTo((long) fileBytes.length);
+    }
+
+    @Test
+    void storageKeyMatchesFormat() throws Exception {
+        doNothing().when(documentStorageService).upload(anyString(), any(), anyString(), anyLong());
+
+        CreateTenantResponse tenant = createTenant("Acme Key", "sub_key");
+        String schema = tenant.tenant().schemaName();
+        String serviceKey = createServiceKey();
+        UUID ownerUserId = UUID.randomUUID();
+        byte[] fileBytes = "key format test".getBytes();
+        String checksum = DocumentHashUtil.sha256Hex(fileBytes);
+
+        MockMultipartFile file = new MockMultipartFile(
+                "file", "Key.pdf", "application/pdf", fileBytes);
+
+        MvcResult result = mockMvc.perform(multipart("/api/v1/documents")
+                        .file(file)
+                        .header(AUTHORIZATION, "Bearer " + serviceKey)
+                        .param("name", "Key.pdf")
+                        .param("mimeType", "application/pdf")
+                        .param("ownerUserId", ownerUserId.toString()))
+                .andExpect(status().isCreated())
+                .andReturn();
+
+        UUID documentId = UUID.fromString(body(result).get("id").asText());
+
+        String storageKey = jdbcTemplate.queryForObject(
+                "SELECT storage_key FROM " + schema + ".document_version WHERE document_id = ?",
+                String.class, documentId);
+        assertThat(storageKey).isEqualTo(schema + "/" + documentId + "/1/" + checksum);
+    }
+
+    @Test
+    void addVersionRejectsDeletedDocument() throws Exception {
+        doNothing().when(documentStorageService).upload(anyString(), any(), anyString(), anyLong());
+
+        CreateTenantResponse tenant = createTenant("Acme Deleted", "sub_deleted");
+        String schema = tenant.tenant().schemaName();
+        String serviceKey = createServiceKey();
+        UUID ownerUserId = UUID.randomUUID();
+
+        MockMultipartFile file = new MockMultipartFile(
+                "file", "DeleteMe.pdf", "application/pdf", "content".getBytes());
+
+        MvcResult createResult = mockMvc.perform(multipart("/api/v1/documents")
+                        .file(file)
+                        .header(AUTHORIZATION, "Bearer " + serviceKey)
+                        .param("name", "DeleteMe.pdf")
+                        .param("mimeType", "application/pdf")
+                        .param("ownerUserId", ownerUserId.toString()))
+                .andExpect(status().isCreated())
+                .andReturn();
+        UUID documentId = UUID.fromString(body(createResult).get("id").asText());
+
+        jdbcTemplate.execute("UPDATE " + schema + ".document SET deleted_at = now() WHERE id = '" + documentId + "'");
+
+        MockMultipartFile fileV2 = new MockMultipartFile(
+                "file", "DeleteMe_v2.pdf", "application/pdf", "content v2".getBytes());
+
+        mockMvc.perform(multipart("/api/v1/documents/{documentId}/versions", documentId)
+                        .file(fileV2)
+                        .header(AUTHORIZATION, "Bearer " + serviceKey)
+                        .param("name", "DeleteMe_v2.pdf")
+                        .param("mimeType", "application/pdf")
+                        .param("ownerUserId", ownerUserId.toString()))
+                .andExpect(status().isNotFound());
     }
 
     private CreateTenantResponse createTenant(String name, String subject) {
@@ -310,10 +509,6 @@ class DocumentFlowIntegrationTest extends BaseIntegrationTest {
         String hexA = UUID.randomUUID().toString().replace("-", "");
         String hexB = UUID.randomUUID().toString().replace("-", "");
         return "mv_live_" + hexA + hexB.substring(0, 8);
-    }
-
-    private String checksum() {
-        return "a".repeat(64);
     }
 
     private JsonNode body(MvcResult result) throws Exception {

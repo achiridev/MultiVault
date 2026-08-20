@@ -117,27 +117,22 @@ Auditoría: `TENANT_CANCELLED`, `TENANT_SUSPENDED`, `TENANT_REINSTATED`.
 
 ### Documentos (scope del tenant) — implementado
 
-Los endpoints de documentos operan sobre el schema del tenant resuelto desde el principal autenticado (JWT o API key SERVICE). El contenido binario **no** se sube aún: los endpoints crean metadatos y la app genera el `storageKey` (`{schema}/{documentId}/{versionNumber}/{checksum}`); la subida/descarga queda pendiente de un ADR de storage.
+Los endpoints de documentos operan sobre el schema del tenant resuelto desde el principal autenticado (JWT o API key SERVICE). Los endpoints aceptan `multipart/form-data` con el archivo binario. Checksum SHA-256 y sizeBytes se calculan server-side desde los bytes reales del archivo (el cliente no los envía). El contenido binario se sube a Backblaze B2 (compatible S3) via `DocumentStorageService`.
 
-El actor (`owner_user_id` del documento y `created_by` de cada versión) se resuelve así: con JWT → `memberId` del principal; con API key `SERVICE` → `ownerUserId` **obligatorio** en el body (400 si falta). Al crear el documento, el trigger DB `trg_document_owner_permission` crea automáticamente la fila OWNER en `document_permission`. Las escrituras registran auditoría en `public.audit_log` (patrón ADR-0003): `DOCUMENT_CREATED` (recurso `document`) y `DOCUMENT_VERSION_UPLOADED` (recurso `document_version`), con `actor_type`/`api_key_id` según el principal, IP y User-Agent del request, y metadata con nombre y `version_number`. Las lecturas no se auditan.
+El actor (`owner_user_id` del documento y `created_by` de cada versión) se resuelve así: con JWT → `memberId` del principal; con API key `SERVICE` → `ownerUserId` **obligatorio** en los form params (400 si falta). Al crear el documento, el trigger DB `trg_document_owner_permission` crea automáticamente la fila OWNER en `document_permission`. Las escrituras registran auditoría en `public.audit_log` (patrón ADR-0003): `DOCUMENT_CREATED` (recurso `document`) y `DOCUMENT_VERSION_UPLOADED` (recurso `document_version`), con `actor_type`/`api_key_id` según el principal, IP y User-Agent del request, y metadata con nombre y `version_number`. Las lecturas no se auditan.
 
 #### POST `/api/v1/documents` — Crear documento (implementado)
 
-Crea el documento (`status = ACTIVE`) + su versión v1 + repunta `current_version_id`. `201 Created`; `400` con body inválido o falta de `ownerUserId` con key SERVICE.
+Crea el documento (`status = ACTIVE`) + su versión v1 + repunta `current_version_id`. Sube el archivo a B2. `201 Created`; `400` con body inválido o falta de `ownerUserId` con key SERVICE.
 
-Request:
-```json
-{
-  "name": "Contract.pdf",
-  "mimeType": "application/pdf",
-  "sizeBytes": 2048,
-  "checksum": "<sha256 hex>",
-  "folderId": "00000000-0000-0000-0000-000000000000",
-  "ownerUserId": "00000000-0000-0000-0000-000000000000"
-}
-```
-
-`folderId` opcional (el schema aún no expone el CRUD de carpetas); `ownerUserId` opcional con JWT (se ignora y se usa el `memberId` del principal), obligatorio con key SERVICE.
+Request (`multipart/form-data`):
+| Part | Tipo | Requerido | Descripción |
+|---|---|---|---|
+| `file` | MultipartFile | Sí | Archivo binario |
+| `name` | String | No | Nombre del documento (default: nombre original del archivo) |
+| `mimeType` | String | No | MIME type (default: content-type del archivo) |
+| `folderId` | UUID | No | ID de la carpeta padre |
+| `ownerUserId` | UUID | Con SERVICE key | Owner del documento |
 
 Response `201 Created`:
 ```json
@@ -152,7 +147,7 @@ Response `201 Created`:
     "storageKey": "mv_acme/aaa.../1/<checksum>",
     "mimeType": "application/pdf",
     "sizeBytes": 2048,
-    "checksum": "...",
+    "checksum": "<sha256 server-side>",
     "createdBy": "...",
     "createdAt": "2026-08-12T17:49:16.120537Z"
   }
@@ -161,17 +156,15 @@ Response `201 Created`:
 
 #### POST `/api/v1/documents/{documentId}/versions` — Subir nueva versión (implementado)
 
-Crea una versión inmutable con `version_number = max + 1` y repunta `current_version_id`. `404` si el documento no existe o está borrado (soft delete). `201 Created` con el DTO de la versión. `ownerUserId` opcional con JWT, obligatorio con key SERVICE (puebla `created_by`).
+Crea una versión inmutable con `version_number = max + 1` y repunta `current_version_id`. Sube el archivo a B2. `404` si el documento no existe o está borrado (soft delete). `201 Created` con el DTO de la versión. `ownerUserId` opcional con JWT, obligatorio con key SERVICE (puebla `created_by`).
 
-Request:
-```json
-{
-  "name": "Contract_v2.pdf",
-  "mimeType": "application/pdf",
-  "sizeBytes": 4096,
-  "checksum": "<sha256 hex>"
-}
-```
+Request (`multipart/form-data`):
+| Part | Tipo | Requerido | Descripción |
+|---|---|---|---|
+| `file` | MultipartFile | Sí | Archivo binario |
+| `name` | String | No | Nombre de la versión (default: nombre original del archivo) |
+| `mimeType` | String | No | MIME type (default: content-type del archivo) |
+| `ownerUserId` | UUID | Con SERVICE key | Actor que sube la versión |
 
 #### GET `/api/v1/documents/{documentId}` — Obtener documento (implementado)
 
@@ -212,7 +205,7 @@ Existen controladores REST (`TenantController` en `/api/v1/tenants`) sobre Servl
 | DELETE | `/api/v1/documents/{id}` | Eliminar documento (soft delete) |
 | POST | `/api/v1/documents/{id}/versions` | ✅ Subir nueva versión |
 | GET | `/api/v1/documents/{id}/versions` | Listar versiones |
-| GET | `/api/v1/documents/{id}/versions/{versionId}` | Descargar versión (pendiente de storage) |
+| GET | `/api/v1/documents/{id}/versions/{versionId}` | Descargar versión (pendiente de endpoint de descarga) |
 
 #### Carpetas (scope del tenant)
 | Método | Path | Descripción |
