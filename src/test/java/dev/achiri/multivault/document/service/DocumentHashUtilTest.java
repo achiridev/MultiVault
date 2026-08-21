@@ -2,6 +2,11 @@ package dev.achiri.multivault.document.service;
 
 import org.junit.jupiter.api.Test;
 
+import java.io.ByteArrayInputStream;
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.util.Random;
+
 import static org.assertj.core.api.Assertions.assertThat;
 
 class DocumentHashUtilTest {
@@ -40,5 +45,20 @@ class DocumentHashUtilTest {
         String hash1 = DocumentHashUtil.sha256Hex(input);
         String hash2 = DocumentHashUtil.sha256Hex(input);
         assertThat(hash1).isEqualTo(hash2);
+    }
+
+    @Test
+    void streamingHashMatchesByteArrayHash() throws IOException {
+        byte[] input = "streaming parity".getBytes(StandardCharsets.UTF_8);
+        assertThat(DocumentHashUtil.sha256Hex(new ByteArrayInputStream(input)))
+                .isEqualTo(DocumentHashUtil.sha256Hex(input));
+    }
+
+    @Test
+    void streamingHashCrossesBufferBoundary() throws IOException {
+        byte[] input = new byte[20_000];
+        new Random(42).nextBytes(input);
+        assertThat(DocumentHashUtil.sha256Hex(new ByteArrayInputStream(input)))
+                .isEqualTo(DocumentHashUtil.sha256Hex(input));
     }
 }

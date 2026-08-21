@@ -24,9 +24,10 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.mock.web.MockMultipartFile;
+import org.springframework.test.context.DynamicPropertyRegistry;
+import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
-
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -45,6 +46,11 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 @AutoConfigureMockMvc
 class DocumentFlowIntegrationTest extends BaseIntegrationTest {
+
+    @DynamicPropertySource
+    static void uploadLimits(DynamicPropertyRegistry registry) {
+        registry.add("multivault.upload.max-size-bytes", () -> "1024");
+    }
 
     @Autowired
     private MockMvc mockMvc;
@@ -475,6 +481,92 @@ class DocumentFlowIntegrationTest extends BaseIntegrationTest {
                         .param("mimeType", "application/pdf")
                         .param("ownerUserId", ownerUserId.toString()))
                 .andExpect(status().isNotFound());
+    }
+
+    @Test
+    void rejectsEmptyFile() throws Exception {
+        createTenant("Acme Empty", "sub_empty");
+        String serviceKey = createServiceKey();
+        UUID ownerUserId = UUID.randomUUID();
+
+        MockMultipartFile file = new MockMultipartFile(
+                "file", "Empty.pdf", "application/pdf", new byte[0]);
+
+        mockMvc.perform(multipart("/api/v1/documents")
+                        .file(file)
+                        .header(AUTHORIZATION, "Bearer " + serviceKey)
+                        .param("name", "Empty.pdf")
+                        .param("mimeType", "application/pdf")
+                        .param("ownerUserId", ownerUserId.toString()))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void rejectsOversizedFile() throws Exception {
+        createTenant("Acme Oversize", "sub_oversize");
+        String serviceKey = createServiceKey();
+        UUID ownerUserId = UUID.randomUUID();
+
+        MockMultipartFile file = new MockMultipartFile(
+                "file", "Big.pdf", "application/pdf", new byte[2048]);
+
+        mockMvc.perform(multipart("/api/v1/documents")
+                        .file(file)
+                        .header(AUTHORIZATION, "Bearer " + serviceKey)
+                        .param("name", "Big.pdf")
+                        .param("mimeType", "application/pdf")
+                        .param("ownerUserId", ownerUserId.toString()))
+                .andExpect(status().isPayloadTooLarge());
+    }
+
+    @Test
+    void rejectsDisallowedMimeType() throws Exception {
+        createTenant("Acme Mime Reject", "sub_mime_reject");
+        String serviceKey = createServiceKey();
+        UUID ownerUserId = UUID.randomUUID();
+
+        MockMultipartFile file = new MockMultipartFile(
+                "file", "Malware.exe", "application/x-msdownload", "content".getBytes());
+
+        mockMvc.perform(multipart("/api/v1/documents")
+                        .file(file)
+                        .header(AUTHORIZATION, "Bearer " + serviceKey)
+                        .param("name", "Malware.exe")
+                        .param("mimeType", "application/x-msdownload")
+                        .param("ownerUserId", ownerUserId.toString()))
+                .andExpect(status().isUnsupportedMediaType());
+    }
+
+    @Test
+    void rejectsNameLongerThan500Characters() throws Exception {
+        createTenant("Acme Long Name", "sub_long_name");
+        String serviceKey = createServiceKey();
+        UUID ownerUserId = UUID.randomUUID();
+
+        MockMultipartFile file = new MockMultipartFile(
+                "file", "Long.pdf", "application/pdf", "content".getBytes());
+
+        mockMvc.perform(multipart("/api/v1/documents")
+                        .file(file)
+                        .header(AUTHORIZATION, "Bearer " + serviceKey)
+                        .param("name", "x".repeat(501))
+                        .param("mimeType", "application/pdf")
+                        .param("ownerUserId", ownerUserId.toString()))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void rejectsMissingFilePart() throws Exception {
+        createTenant("Acme No File", "sub_no_file");
+        String serviceKey = createServiceKey();
+        UUID ownerUserId = UUID.randomUUID();
+
+        mockMvc.perform(multipart("/api/v1/documents")
+                        .header(AUTHORIZATION, "Bearer " + serviceKey)
+                        .param("name", "Ghost.pdf")
+                        .param("mimeType", "application/pdf")
+                        .param("ownerUserId", ownerUserId.toString()))
+                .andExpect(status().isBadRequest());
     }
 
     private CreateTenantResponse createTenant(String name, String subject) {
