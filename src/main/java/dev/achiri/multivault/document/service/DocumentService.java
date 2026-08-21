@@ -4,6 +4,9 @@ import dev.achiri.multivault.audit.event.AuditContext;
 import dev.achiri.multivault.audit.event.AuditEvent;
 import dev.achiri.multivault.audit.event.AuditEventPublisher;
 import dev.achiri.multivault.common.exception.RecursoNoEncontradoException;
+import dev.achiri.multivault.common.exception.StorageException;
+import dev.achiri.multivault.document.dto.CreateDocumentRequest;
+import dev.achiri.multivault.document.dto.CreateDocumentVersionRequest;
 import dev.achiri.multivault.document.dto.DocumentResponse;
 import dev.achiri.multivault.document.dto.DocumentVersionResponse;
 import dev.achiri.multivault.document.mapper.DocumentMapper;
@@ -17,10 +20,11 @@ import dev.achiri.multivault.infrastructure.storage.DocumentStorageService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.web.multipart.MultipartFile;
 
-import java.io.ByteArrayInputStream;
 import java.io.IOException;
+import java.io.InputStream;
 import java.util.Map;
 import java.util.UUID;
 
@@ -33,98 +37,90 @@ public class DocumentService {
     private final DocumentMapper documentMapper;
     private final AuditEventPublisher auditEventPublisher;
     private final DocumentStorageService documentStorageService;
+    private final UploadPolicy uploadPolicy;
+    private final TransactionTemplate transactionTemplate;
 
-    @Transactional
-    public DocumentResponse create(MultipartFile file, String name, String mimeType,
-                                   UUID folderId, AuditContext auditContext) throws IOException {
-        byte[] fileBytes = file.getBytes();
-        String checksum = DocumentHashUtil.sha256Hex(fileBytes);
-        long sizeBytes = fileBytes.length;
-        String resolvedMimeType = (mimeType != null && !mimeType.isBlank()) ? mimeType : file.getContentType();
+    public DocumentResponse create(MultipartFile file, CreateDocumentRequest request, AuditContext auditContext) {
+        uploadPolicy.validate(file);
+        String name = resolveName(request.name(), file);
+        String mimeType = resolveMimeType(request.mimeType(), file);
+        uploadPolicy.validateMimeType(mimeType);
 
-        Document document = new Document();
-        document.setFolderId(folderId);
-        document.setOwnerUserId(auditContext.actorUserId());
-        document.setStatus(DocumentStatus.ACTIVE);
-        document = documentRepository.save(document);
+        String checksum = checksumOf(file);
+        long sizeBytes = file.getSize();
 
-        String storageKey = TenantContext.getSchema() + "/" + document.getId() + "/1/" + checksum;
+        Document document = transactionTemplate.execute(tx -> {
+            Document fresh = new Document();
+            fresh.setFolderId(request.folderId());
+            fresh.setOwnerUserId(auditContext.actorUserId());
+            fresh.setStatus(DocumentStatus.ACTIVE);
+            return documentRepository.save(fresh);
+        });
 
-        documentStorageService.upload(
-                storageKey,
-                new ByteArrayInputStream(fileBytes),
-                resolvedMimeType,
-                sizeBytes);
+        String storageKey = storageKey(document.getId(), 1, checksum);
 
-        DocumentVersion version = saveVersion(
-                document.getId(), auditContext.actorUserId(), 1, name, storageKey,
-                resolvedMimeType, sizeBytes, checksum);
-        document.setCurrentVersionId(version.getId());
-        documentRepository.save(document);
+        try {
+            upload(storageKey, file, mimeType, sizeBytes);
+        } catch (RuntimeException e) {
+            deleteDocumentQuietly(document.getId());
+            throw e;
+        }
 
-        auditEventPublisher.publish(AuditEvent.builder()
-                .tenantId(auditContext.tenantId())
-                .actorUserId(auditContext.actorUserId())
-                .apiKeyId(auditContext.apiKeyId())
-                .actorType(auditContext.actorType())
-                .action("DOCUMENT_CREATED")
-                .resourceType("document")
-                .resourceId(document.getId())
-                .ipAddress(auditContext.ipAddress())
-                .userAgent(auditContext.userAgent())
-                .metadata(Map.of("document_name", name, "version_number", 1))
-                .build());
+        try {
+            return transactionTemplate.execute(tx -> {
+                DocumentVersion version = saveVersion(document.getId(), auditContext.actorUserId(), 1,
+                        name, storageKey, mimeType, sizeBytes, checksum);
+                document.setCurrentVersionId(version.getId());
+                documentRepository.save(document);
 
-        return documentMapper.toResponse(document, version);
+                publishAudit(auditContext, "DOCUMENT_CREATED", "document", document.getId(),
+                        Map.of("document_name", name, "version_number", 1));
+
+                return documentMapper.toResponse(document, version);
+            });
+        } catch (RuntimeException e) {
+            deleteObjectQuietly(storageKey);
+            deleteDocumentQuietly(document.getId());
+            throw e;
+        }
     }
 
-    @Transactional
-    public DocumentVersionResponse addVersion(UUID documentId, MultipartFile file, String name,
-                                              String mimeType, AuditContext auditContext) throws IOException {
-        Document document = documentRepository.findByIdAndDeletedAtIsNull(documentId)
-                .orElseThrow(() -> new RecursoNoEncontradoException("document", documentId));
+    public DocumentVersionResponse addVersion(UUID documentId, MultipartFile file,
+                                              CreateDocumentVersionRequest request, AuditContext auditContext) {
+        uploadPolicy.validate(file);
+        requireDocument(documentId);
 
-        int versionNumber = documentVersionRepository
-                .findTopByDocumentIdOrderByVersionNumberDesc(documentId)
-                .map(version -> version.getVersionNumber() + 1)
-                .orElse(1);
+        int versionNumber = nextVersionNumber(documentId);
+        String name = resolveName(request.name(), file);
+        String mimeType = resolveMimeType(request.mimeType(), file);
+        uploadPolicy.validateMimeType(mimeType);
 
-        byte[] fileBytes = file.getBytes();
-        String checksum = DocumentHashUtil.sha256Hex(fileBytes);
-        long sizeBytes = fileBytes.length;
-        String resolvedMimeType = (mimeType != null && !mimeType.isBlank()) ? mimeType : file.getContentType();
+        String checksum = checksumOf(file);
+        long sizeBytes = file.getSize();
+        String storageKey = storageKey(documentId, versionNumber, checksum);
 
-        String storageKey = TenantContext.getSchema() + "/" + documentId + "/" + versionNumber + "/" + checksum;
+        upload(storageKey, file, mimeType, sizeBytes);
 
-        documentStorageService.upload(
-                storageKey,
-                new ByteArrayInputStream(fileBytes),
-                resolvedMimeType,
-                sizeBytes);
+        try {
+            return transactionTemplate.execute(tx -> {
+                Document document = documentRepository.findByIdAndDeletedAtIsNull(documentId)
+                        .orElseThrow(() -> new RecursoNoEncontradoException("document", documentId));
+                DocumentVersion version = saveVersion(documentId, auditContext.actorUserId(), versionNumber,
+                        name, storageKey, mimeType, sizeBytes, checksum);
+                document.setCurrentVersionId(version.getId());
 
-        DocumentVersion version = saveVersion(
-                documentId, auditContext.actorUserId(), versionNumber, name, storageKey,
-                resolvedMimeType, sizeBytes, checksum);
-        document.setCurrentVersionId(version.getId());
-        documentRepository.save(document);
+                publishAudit(auditContext, "DOCUMENT_VERSION_UPLOADED", "document_version", version.getId(),
+                        Map.of(
+                                "document_id", documentId.toString(),
+                                "document_name", name,
+                                "version_number", versionNumber));
 
-        auditEventPublisher.publish(AuditEvent.builder()
-                .tenantId(auditContext.tenantId())
-                .actorUserId(auditContext.actorUserId())
-                .apiKeyId(auditContext.apiKeyId())
-                .actorType(auditContext.actorType())
-                .action("DOCUMENT_VERSION_UPLOADED")
-                .resourceType("document_version")
-                .resourceId(version.getId())
-                .ipAddress(auditContext.ipAddress())
-                .userAgent(auditContext.userAgent())
-                .metadata(Map.of(
-                        "document_id", documentId.toString(),
-                        "document_name", name,
-                        "version_number", versionNumber))
-                .build());
-
-        return documentMapper.toVersionResponse(version);
+                return documentMapper.toVersionResponse(version);
+            });
+        } catch (RuntimeException e) {
+            deleteObjectQuietly(storageKey);
+            throw e;
+        }
     }
 
     @Transactional(readOnly = true)
@@ -135,6 +131,18 @@ public class DocumentService {
                 ? null
                 : documentVersionRepository.findById(document.getCurrentVersionId()).orElse(null);
         return documentMapper.toResponse(document, currentVersion);
+    }
+
+    private int nextVersionNumber(UUID documentId) {
+        return documentVersionRepository
+                .findTopByDocumentIdOrderByVersionNumberDesc(documentId)
+                .map(version -> version.getVersionNumber() + 1)
+                .orElse(1);
+    }
+
+    private void requireDocument(UUID documentId) {
+        documentRepository.findByIdAndDeletedAtIsNull(documentId)
+                .orElseThrow(() -> new RecursoNoEncontradoException("document", documentId));
     }
 
     private DocumentVersion saveVersion(UUID documentId, UUID createdBy, int versionNumber, String name,
@@ -149,5 +157,76 @@ public class DocumentService {
         version.setChecksum(checksum);
         version.setCreatedBy(createdBy);
         return documentVersionRepository.save(version);
+    }
+
+    private void publishAudit(AuditContext auditContext, String action, String resourceType,
+                              UUID resourceId, Map<String, Object> metadata) {
+        auditEventPublisher.publish(AuditEvent.builder()
+                .tenantId(auditContext.tenantId())
+                .actorUserId(auditContext.actorUserId())
+                .apiKeyId(auditContext.apiKeyId())
+                .actorType(auditContext.actorType())
+                .action(action)
+                .resourceType(resourceType)
+                .resourceId(resourceId)
+                .ipAddress(auditContext.ipAddress())
+                .userAgent(auditContext.userAgent())
+                .metadata(metadata)
+                .build());
+    }
+
+    private String storageKey(UUID documentId, int versionNumber, String checksum) {
+        return TenantContext.getSchema() + "/" + documentId + "/" + versionNumber + "/" + checksum;
+    }
+
+    private String checksumOf(MultipartFile file) {
+        try {
+            return DocumentHashUtil.sha256Hex(file.getInputStream());
+        } catch (IOException e) {
+            throw new StorageException("No se pudo leer el archivo", e);
+        }
+    }
+
+    private void upload(String storageKey, MultipartFile file, String mimeType, long sizeBytes) {
+        try {
+            InputStream content = file.getInputStream();
+            documentStorageService.upload(storageKey, content, mimeType, sizeBytes);
+        } catch (IOException e) {
+            throw new StorageException("No se pudo subir el archivo al almacenamiento", e);
+        }
+    }
+
+    private void deleteObjectQuietly(String storageKey) {
+        try {
+            documentStorageService.delete(storageKey);
+        } catch (IOException | RuntimeException ignored) {
+        }
+    }
+
+    private void deleteDocumentQuietly(UUID documentId) {
+        try {
+            documentRepository.deleteById(documentId);
+        } catch (RuntimeException ignored) {
+        }
+    }
+
+    private String resolveName(String requested, MultipartFile file) {
+        if (requested != null && !requested.isBlank()) {
+            return requested.trim();
+        }
+        String original = file.getOriginalFilename();
+        if (original != null && !original.isBlank()) {
+            int lastSeparator = Math.max(original.lastIndexOf('/'), original.lastIndexOf('\\'));
+            return original.substring(lastSeparator + 1);
+        }
+        throw new StorageException("El archivo no tiene nombre");
+    }
+
+    private String resolveMimeType(String requested, MultipartFile file) {
+        if (requested != null && !requested.isBlank()) {
+            return requested.trim();
+        }
+        String contentType = file.getContentType();
+        return (contentType != null && !contentType.isBlank()) ? contentType : "application/octet-stream";
     }
 }

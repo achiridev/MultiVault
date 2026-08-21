@@ -59,6 +59,7 @@ Punto de entrada único. Lee este archivo primero, luego los documentos relevant
 | [ADR-0007](06-Decisiones/ADR-0007.md) | JJWT con codec JSON Jackson 3 propio (sin `jjwt-jackson`) |
 | [ADR-0008](06-Decisiones/ADR-0008.md) | Conexión Redis local y Spring Cache con serialización Jackson 3 |
 | [ADR-0009](06-Decisiones/ADR-0009.md) | Ciclo de vida de tenants (cancelación, suspensión, reactivación) |
+| [ADR-0010](06-Decisiones/ADR-0010.md) | Streaming de uploads y transacción corta en documentos |
 
 ## 99-Templates
 
