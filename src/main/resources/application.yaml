@@ -18,6 +18,11 @@ spring:
       hibernate:
         hbm2ddl:
           schema_filter_provider: dev.achiri.multivault.infrastructure.persistence.config.TenantSchemaFilterProvider
+  servlet:
+    multipart:
+      max-file-size: ${UPLOAD_MAX_FILE_SIZE:100MB}
+      max-request-size: ${UPLOAD_MAX_REQUEST_SIZE:105MB}
+
   flyway:
     enabled: true
     locations: classpath:db/migration
@@ -40,6 +45,11 @@ storage:
     access-key: ${B2_ACCESS_KEY:}
     secret-key: ${B2_SECRET_KEY:}
     bucket: ${B2_BUCKET:}
+
+multivault:
+  upload:
+    max-size-bytes: ${UPLOAD_MAX_SIZE_BYTES:104857600}
+    allowed-mime-types: ${UPLOAD_ALLOWED_MIME_TYPES:application/pdf,text/plain,text/csv,image/png,image/jpeg,image/webp,image/gif,application/json,application/zip,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.openxmlformats-officedocument.presentationml.presentation}
 
 server:
   port: ${PORT:8080}

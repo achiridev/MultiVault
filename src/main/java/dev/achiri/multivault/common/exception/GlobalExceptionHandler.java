@@ -2,17 +2,23 @@ package dev.achiri.multivault.common.exception;
 
 import dev.achiri.multivault.common.response.ErrorResponse;
 
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.authentication.BadCredentialsException;
+import org.springframework.validation.BindException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.multipart.MaxUploadSizeExceededException;
+import org.springframework.web.multipart.MultipartException;
+import org.springframework.web.multipart.support.MissingServletRequestPartException;
 
 import java.time.LocalDateTime;
 import java.util.HashMap;
 import java.util.Map;
 
+@Slf4j
 @RestControllerAdvice
 public class GlobalExceptionHandler {
     @ExceptionHandler(IllegalArgumentException.class)
@@ -87,6 +93,42 @@ public class GlobalExceptionHandler {
         return ResponseEntity.status(HttpStatus.FORBIDDEN).body(error);
     }
 
+    @ExceptionHandler(ArchivoInvalidoException.class)
+    public ResponseEntity<ErrorResponse> handleArchivoInvalido(ArchivoInvalidoException ex) {
+        return ResponseEntity.badRequest().body(error(400, ex.getMessage()));
+    }
+
+    @ExceptionHandler(ArchivoDemasiadoGrandeException.class)
+    public ResponseEntity<ErrorResponse> handleArchivoDemasiadoGrande(ArchivoDemasiadoGrandeException ex) {
+        return ResponseEntity.status(HttpStatus.PAYLOAD_TOO_LARGE).body(error(413, ex.getMessage()));
+    }
+
+    @ExceptionHandler(TipoArchivoNoPermitidoException.class)
+    public ResponseEntity<ErrorResponse> handleTipoArchivoNoPermitido(TipoArchivoNoPermitidoException ex) {
+        return ResponseEntity.status(HttpStatus.UNSUPPORTED_MEDIA_TYPE).body(error(415, ex.getMessage()));
+    }
+
+    @ExceptionHandler(MaxUploadSizeExceededException.class)
+    public ResponseEntity<ErrorResponse> handleMaxUploadSize(MaxUploadSizeExceededException ex) {
+        return ResponseEntity.status(HttpStatus.PAYLOAD_TOO_LARGE)
+                .body(error(413, "El archivo excede el tamaño máximo permitido"));
+    }
+
+    @ExceptionHandler({MultipartException.class, MissingServletRequestPartException.class})
+    public ResponseEntity<ErrorResponse> handleMultipart(Exception ex) {
+        return ResponseEntity.badRequest().body(error(400, "Request multipart inválido"));
+    }
+
+    @ExceptionHandler(BindException.class)
+    public ResponseEntity<ErrorResponse> handleBind(BindException ex) {
+        return ResponseEntity.badRequest().body(error(400, "Parámetros de request inválidos"));
+    }
+
+    @ExceptionHandler(StorageException.class)
+    public ResponseEntity<ErrorResponse> handleStorage(StorageException ex) {
+        return ResponseEntity.internalServerError().body(error(500, "Error de almacenamiento"));
+    }
+
     @ExceptionHandler(EstadoTransicionInvalidoException.class)
     public ResponseEntity<ErrorResponse> handleEstadoTransicionInvalido(EstadoTransicionInvalidoException ex) {
         ErrorResponse error = new ErrorResponse(
@@ -99,16 +141,14 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ErrorResponse> manejarGeneral(Exception ex) {
-
-        ErrorResponse error = new ErrorResponse(
-                500,
-                "Error interno del servidor",
-                LocalDateTime.now()
-        );
-
+        log.error("Error interno no controlado", ex);
         return ResponseEntity
                 .status(HttpStatus.INTERNAL_SERVER_ERROR)
-                .body(error);
+                .body(error(500, "Error interno del servidor"));
+    }
+
+    private ErrorResponse error(int status, String mensaje) {
+        return new ErrorResponse(status, mensaje, LocalDateTime.now());
     }
 }
 
