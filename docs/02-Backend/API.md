@@ -117,13 +117,15 @@ Auditoría: `TENANT_CANCELLED`, `TENANT_SUSPENDED`, `TENANT_REINSTATED`.
 
 ### Documentos (scope del tenant) — implementado
 
-Los endpoints de documentos operan sobre el schema del tenant resuelto desde el principal autenticado (JWT o API key SERVICE). Los endpoints aceptan `multipart/form-data` con el archivo binario. Checksum SHA-256 y sizeBytes se calculan server-side desde los bytes reales del archivo (el cliente no los envía). El contenido binario se sube a Backblaze B2 (compatible S3) via `DocumentStorageService`.
+Los endpoints de documentos operan sobre el schema del tenant resuelto desde el principal autenticado (JWT o API key SERVICE). Los endpoints aceptan `multipart/form-data` con el archivo binario. Checksum SHA-256 y sizeBytes se calculan server-side desde los bytes reales del archivo (el cliente no los envía). El contenido binario se sube a Backblaze B2 (compatible S3) via `DocumentStorageService`: el checksum se calcula en streaming y el upload ocurre fuera de la transacción de BD (ADR-0010).
+
+Validación de upload (`UploadPolicy`, config `multivault.upload.*`): archivo vacío o ausente → `400`; tamaño > `multivault.upload.max-size-bytes` (default 100 MB) → `413`; MIME fuera de `multivault.upload.allowed-mime-types` (lista separada por comas vía env `UPLOAD_ALLOWED_MIME_TYPES`; vacía = permitir todo) → `415`. Request multipart malformado o part `file` faltante → `400`. Fallos de almacenamiento → `500`.
 
 El actor (`owner_user_id` del documento y `created_by` de cada versión) se resuelve así: con JWT → `memberId` del principal; con API key `SERVICE` → `ownerUserId` **obligatorio** en los form params (400 si falta). Al crear el documento, el trigger DB `trg_document_owner_permission` crea automáticamente la fila OWNER en `document_permission`. Las escrituras registran auditoría en `public.audit_log` (patrón ADR-0003): `DOCUMENT_CREATED` (recurso `document`) y `DOCUMENT_VERSION_UPLOADED` (recurso `document_version`), con `actor_type`/`api_key_id` según el principal, IP y User-Agent del request, y metadata con nombre y `version_number`. Las lecturas no se auditan.
 
 #### POST `/api/v1/documents` — Crear documento (implementado)
 
-Crea el documento (`status = ACTIVE`) + su versión v1 + repunta `current_version_id`. Sube el archivo a B2. `201 Created`; `400` con body inválido o falta de `ownerUserId` con key SERVICE.
+Crea el documento (`status = ACTIVE`) + su versión v1 + repunta `current_version_id`. Sube el archivo a B2. `201 Created`; `400` con archivo vacío, part `file` faltante, `name` > 500 chars o falta de `ownerUserId` con key SERVICE; `413` si excede `multivault.upload.max-size-bytes`; `415` si el MIME no está en la allowlist.
 
 Request (`multipart/form-data`):
 | Part | Tipo | Requerido | Descripción |
@@ -156,7 +158,7 @@ Response `201 Created`:
 
 #### POST `/api/v1/documents/{documentId}/versions` — Subir nueva versión (implementado)
 
-Crea una versión inmutable con `version_number = max + 1` y repunta `current_version_id`. Sube el archivo a B2. `404` si el documento no existe o está borrado (soft delete). `201 Created` con el DTO de la versión. `ownerUserId` opcional con JWT, obligatorio con key SERVICE (puebla `created_by`).
+Crea una versión inmutable con `version_number = max + 1` y repunta `current_version_id`. Sube el archivo a B2. `404` si el documento no existe o está borrado (soft delete). `201 Created` con el DTO de la versión. `400` con archivo vacío o `name` > 500 chars; `413` si excede el tamaño máximo; `415` si el MIME no está en la allowlist. `ownerUserId` opcional con JWT, obligatorio con key SERVICE (puebla `created_by`).
 
 Request (`multipart/form-data`):
 | Part | Tipo | Requerido | Descripción |
@@ -230,7 +232,7 @@ Existen controladores REST (`TenantController` en `/api/v1/tenants`) sobre Servl
 - [ ] Implementar el resto de controladores REST
 - [ ] Definir formato de respuesta estándar (envoltura, códigos de error) — POST /tenants ya usa estructura anidada por recurso
 - [ ] Documentar con OpenAPI/Swagger
-- [ ] Implementar validación de parámetros y cuerpos de request
+- [x] Implementar validación de parámetros y cuerpos de request (`@Valid` en DTOs; uploads con `UploadPolicy`: 400/413/415)
 
 ## Preguntas abiertas
 
