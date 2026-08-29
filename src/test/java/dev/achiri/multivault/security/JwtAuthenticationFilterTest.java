@@ -90,6 +90,20 @@ class JwtAuthenticationFilterTest {
     }
 
     @Test
+    void doesNotAuthenticateJwtWithoutStandardKey() throws Exception {
+        MockHttpServletRequest request = bearerRequest("some.jwt.token");
+        FilterChain chain = mock(FilterChain.class);
+        when(jwtDecoder.authenticate("some.jwt.token"))
+                .thenReturn(new ValidatedJwt(TENANT_ID, "user-1", "user@test.com", "User One"));
+
+        filter.doFilter(request, new MockHttpServletResponse(), chain);
+
+        assertThat(SecurityContextHolder.getContext().getAuthentication()).isNull();
+        verify(tenantMemberService, never()).upsert(any(), any(), any(), any());
+        verify(chain).doFilter(any(), any());
+    }
+
+    @Test
     void clearsContextOnInvalidJwt() throws Exception {
         MockHttpServletRequest request = bearerRequest("bad.token");
         FilterChain chain = mock(FilterChain.class);

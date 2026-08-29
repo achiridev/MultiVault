@@ -38,7 +38,6 @@ import java.util.UUID;
 
 import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -103,16 +102,16 @@ class JwtFilterIntegrationTest extends BaseIntegrationTest {
     }
 
     @Test
-    void authenticatesValidJwt() throws Exception {
+    void rejectsValidJwtWithoutApiKey() throws Exception {
         String token = jwt(KEY_ID, VALID_KEY_PAIR, ISSUER, SUBJECT, AUDIENCE, Instant.now().plusSeconds(300));
 
         mockMvc.perform(put("/api/v1/tenants/" + tenantId + "/identity-provider")
                         .header("Authorization", "Bearer " + token)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(validBody()))
-                .andExpect(status().isOk());
+                .andExpect(status().isUnauthorized());
 
-        assertTrue(tenantMemberRepository.findByTenantIdAndSubject(tenantId, SUBJECT).isPresent());
+        assertThat(tenantMemberRepository.findByTenantIdAndSubject(tenantId, SUBJECT)).isEmpty();
     }
 
     @Test
@@ -237,10 +236,12 @@ class JwtFilterIntegrationTest extends BaseIntegrationTest {
 
     @Test
     void handlesJwksKeyRotation() throws Exception {
+        String rawKey = createStandardKey(tenantId);
         String tokenA = jwt(KEY_ID, VALID_KEY_PAIR, ISSUER, SUBJECT, AUDIENCE, Instant.now().plusSeconds(300));
 
         mockMvc.perform(put("/api/v1/tenants/" + tenantId + "/identity-provider")
                         .header("Authorization", "Bearer " + tokenA)
+                        .header("X-API-Key", rawKey)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(validBody()))
                 .andExpect(status().isOk());
@@ -250,6 +251,7 @@ class JwtFilterIntegrationTest extends BaseIntegrationTest {
 
         mockMvc.perform(put("/api/v1/tenants/" + tenantId + "/identity-provider")
                         .header("Authorization", "Bearer " + tokenB)
+                        .header("X-API-Key", rawKey)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(validBody()))
                 .andExpect(status().isOk());
@@ -257,10 +259,12 @@ class JwtFilterIntegrationTest extends BaseIntegrationTest {
 
     @Test
     void updatesExistingMemberOnReLogin() throws Exception {
+        String rawKey = createStandardKey(tenantId);
         String firstToken = jwt(KEY_ID, VALID_KEY_PAIR, ISSUER, SUBJECT, AUDIENCE, Instant.now().plusSeconds(300));
 
         mockMvc.perform(put("/api/v1/tenants/" + tenantId + "/identity-provider")
                         .header("Authorization", "Bearer " + firstToken)
+                        .header("X-API-Key", rawKey)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(validBody()))
                 .andExpect(status().isOk());
@@ -272,6 +276,7 @@ class JwtFilterIntegrationTest extends BaseIntegrationTest {
 
         mockMvc.perform(put("/api/v1/tenants/" + tenantId + "/identity-provider")
                         .header("Authorization", "Bearer " + secondToken)
+                        .header("X-API-Key", rawKey)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(validBody()))
                 .andExpect(status().isOk());
@@ -315,7 +320,7 @@ class JwtFilterIntegrationTest extends BaseIntegrationTest {
         key.setKeyPrefix(rawKey.substring(0, 12));
         key.setKeyHash(apiKeyHasher.sha256Hex(rawKey));
         key.setKeyType(ApiKeyType.STANDARD);
-        key.setScopes(List.of("documents:read"));
+        key.setScopes(List.of("tenant:settings:write"));
         key.setCreatedByUserId(USER_ID);
         apiKeyRepository.saveAndFlush(key);
         return rawKey;

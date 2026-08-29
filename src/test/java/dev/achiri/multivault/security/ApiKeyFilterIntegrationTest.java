@@ -80,6 +80,26 @@ class ApiKeyFilterIntegrationTest extends BaseIntegrationTest {
     }
 
     @Test
+    void rejectsServiceKeyWithoutRequiredScope() throws Exception {
+        String rawKey = randomRawKey();
+        ApiKey key = new ApiKey();
+        key.setTenantId(tenantId);
+        key.setName("limited key");
+        key.setKeyPrefix(rawKey.substring(0, 12));
+        key.setKeyHash(apiKeyHasher.sha256Hex(rawKey));
+        key.setKeyType(ApiKeyType.SERVICE);
+        key.setScopes(List.of("documents:read"));
+        key.setCreatedByUserId(USER_ID);
+        apiKeyRepository.saveAndFlush(key);
+
+        mockMvc.perform(put(PROTECTED_PATH)
+                        .header("Authorization", "Bearer " + rawKey)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(validBody()))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
     void rejectsStandardKeyWithoutJwt() throws Exception {
         String rawKey = createKey(ApiKeyType.STANDARD, null, null);
 
@@ -180,7 +200,7 @@ class ApiKeyFilterIntegrationTest extends BaseIntegrationTest {
         key.setKeyPrefix(rawKey.substring(0, 12));
         key.setKeyHash(apiKeyHasher.sha256Hex(rawKey));
         key.setKeyType(type);
-        key.setScopes(List.of("documents:read"));
+        key.setScopes(List.of("tenant:settings:write"));
         key.setCreatedByUserId(USER_ID);
         key.setRevokedAt(revokedAt);
         key.setExpiresAt(expiresAt);

@@ -97,7 +97,12 @@ class TenantSchemaIsolationTest extends BaseIntegrationTest {
                 name,
                 plan.getId(),
                 new CreateTenantRequest.TenantAdminDto(subject, subject + "@acme.com", "Admin"),
-                null));
+                new CreateTenantRequest.TenantIdentityProviderDto(
+                        "https://idp.acme.com",
+                        "https://idp.acme.com/.well-known/jwks.json",
+                        "https://api.acme.com",
+                        null,
+                        null)));
         tenantIds.add(response.tenant().id());
         schemaNames.add(response.tenant().schemaName());
         return response;

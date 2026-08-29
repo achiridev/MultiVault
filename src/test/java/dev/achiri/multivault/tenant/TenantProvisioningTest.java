@@ -155,7 +155,7 @@ class TenantProvisioningTest extends BaseIntegrationTest {
         Plan plan = activePlan();
 
         CreateTenantResponse response = tenantService.create(
-                request("Acme Trigger", plan.getId(), "sub_9", "admin9@acme.com", null));
+                request("Acme Trigger", plan.getId(), "sub_9", "admin9@acme.com", identityProvider()));
         tenantId = response.tenant().id();
         schemaName = response.tenant().schemaName();
 
@@ -181,7 +181,7 @@ class TenantProvisioningTest extends BaseIntegrationTest {
         Plan plan = activePlan();
 
         CreateTenantResponse response = tenantService.create(
-                request("Acme Idempotent", plan.getId(), "sub_10", "admin10@acme.com", null));
+                request("Acme Idempotent", plan.getId(), "sub_10", "admin10@acme.com", identityProvider()));
         tenantId = response.tenant().id();
         schemaName = response.tenant().schemaName();
 
@@ -233,8 +233,8 @@ class TenantProvisioningTest extends BaseIntegrationTest {
     @Test
     void rejectsDuplicateSchemaName() {
         Plan plan = activePlan();
-        CreateTenantRequest first = request("Acme Duplicate", plan.getId(), "sub_3", "admin3@acme.com", null);
-        CreateTenantRequest second = request("Acme Duplicate", plan.getId(), "sub_4", "admin4@acme.com", null);
+        CreateTenantRequest first = request("Acme Duplicate", plan.getId(), "sub_3", "admin3@acme.com", identityProvider());
+        CreateTenantRequest second = request("Acme Duplicate", plan.getId(), "sub_4", "admin4@acme.com", identityProvider());
 
         CreateTenantResponse response = tenantService.create(first);
         tenantId = response.tenant().id();
@@ -249,14 +249,14 @@ class TenantProvisioningTest extends BaseIntegrationTest {
         Plan plan = activePlan();
 
         assertThatThrownBy(() -> tenantService.create(
-                request("!!!", plan.getId(), "sub_5", "admin5@acme.com", null)))
+                request("!!!", plan.getId(), "sub_5", "admin5@acme.com", identityProvider())))
                 .isInstanceOf(IllegalArgumentException.class);
     }
 
     @Test
     void rejectsNonexistentPlan() {
         assertThatThrownBy(() -> tenantService.create(
-                request("Acme No Plan", UUID.randomUUID(), "sub_6", "admin6@acme.com", null)))
+                request("Acme No Plan", UUID.randomUUID(), "sub_6", "admin6@acme.com", identityProvider())))
                 .isInstanceOf(RecursoNoEncontradoException.class);
     }
 
@@ -267,7 +267,7 @@ class TenantProvisioningTest extends BaseIntegrationTest {
         planRepository.save(plan);
         try {
             assertThatThrownBy(() -> tenantService.create(
-                    request("Acme Inactive Plan", plan.getId(), "sub_7", "admin7@acme.com", null)))
+                    request("Acme Inactive Plan", plan.getId(), "sub_7", "admin7@acme.com", identityProvider())))
                     .isInstanceOf(RecursoNoEncontradoException.class);
         } finally {
             plan.setIsActive(true);
@@ -281,7 +281,7 @@ class TenantProvisioningTest extends BaseIntegrationTest {
         doThrow(new RuntimeException("boom")).when(tenantSchemaProvisioner).provision(anyString());
 
         assertThatThrownBy(() -> tenantService.create(
-                request("Acme Broken Schema", plan.getId(), "sub_8", "admin8@acme.com", null)))
+                request("Acme Broken Schema", plan.getId(), "sub_8", "admin8@acme.com", identityProvider())))
                 .isInstanceOf(TenantProvisioningException.class);
 
         Tenant stored = tenantRepository.findAll().stream()
@@ -316,7 +316,7 @@ class TenantProvisioningTest extends BaseIntegrationTest {
     }
 
     @Test
-    @WithMockUser
+    @WithMockUser(authorities = "SCOPE_tenant:settings:write")
     void updatesTenantIdentityProvider() throws Exception {
         Plan plan = activePlan();
 
@@ -346,7 +346,7 @@ class TenantProvisioningTest extends BaseIntegrationTest {
     }
 
     @Test
-    @WithMockUser
+    @WithMockUser(authorities = "SCOPE_tenant:settings:write")
     void rejectsIdentityProviderForUnknownTenant() throws Exception {
         mockMvc.perform(put("/api/v1/tenants/{tenantId}/identity-provider", UUID.randomUUID())
                         .with(csrf())
@@ -362,7 +362,7 @@ class TenantProvisioningTest extends BaseIntegrationTest {
     }
 
     @Test
-    @WithMockUser
+    @WithMockUser(authorities = "SCOPE_tenant:settings:write")
     void rejectsInvalidIdentityProviderBody() throws Exception {
         Plan plan = activePlan();
 
