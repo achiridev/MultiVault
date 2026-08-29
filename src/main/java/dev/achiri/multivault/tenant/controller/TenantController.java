@@ -11,6 +11,7 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
@@ -35,6 +36,7 @@ public class TenantController {
     }
 
     @PutMapping("/{tenantId}/identity-provider")
+    @PreAuthorize("hasAuthority('SCOPE_tenant:settings:write')")
     public ResponseEntity<CreateTenantResponse.TenantIdentityProviderDto> updateIdentityProvider(
             @PathVariable UUID tenantId,
             @Valid @RequestBody UpdateTenantIdentityProviderRequest request) {
@@ -42,6 +44,7 @@ public class TenantController {
     }
 
     @PutMapping("/{tenantId}/status")
+    @PreAuthorize("hasAuthority('SCOPE_tenant:settings:write')")
     public ResponseEntity<TenantStatusResponse> updateStatus(
             @PathVariable UUID tenantId,
             @Valid @RequestBody UpdateTenantStatusRequest request) {

@@ -57,7 +57,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
             ApiKeyIdentity standardKey =
                     (ApiKeyIdentity) request.getAttribute(ApiKeyAuthenticationFilter.STANDARD_API_KEY_ATTR);
-            if (standardKey != null && !standardKey.tenantId().equals(validated.tenantId())) {
+            if (standardKey == null || !standardKey.tenantId().equals(validated.tenantId())) {
                 filterChain.doFilter(request, response);
                 return;
             }
