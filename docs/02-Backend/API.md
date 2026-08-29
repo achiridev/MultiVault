@@ -45,13 +45,20 @@ Response `201 Created`:
 
 ## Autenticación
 
-Todos los endpoints excepto `POST /api/v1/tenants` requieren autenticación. Para integraciones M2M, la API key se envía como:
+Todos los endpoints excepto `POST /api/v1/tenants` requieren autenticación.
 
-```
-Authorization: Bearer mv_live_...
-```
+- **M2M (SERVICE):** la API key viaja en `Authorization: Bearer mv_live_...` (o `X-API-Key`).
+- **Miembro humano (STANDARD + JWT):** el JWT viaja en `Authorization: Bearer` y la key STANDARD en `X-API-Key`. El JWT **nunca autentica solo** (ADR-0011): sin key STANDARD del mismo tenant → `401`. Un futuro JWT de platform_user usará su propio mecanismo.
 
-`ApiKeyAuthenticationFilter` distingue la key del JWT por el prefijo `mv_live_`. Solo las keys `SERVICE` autentican por sí solas; las `STANDARD` exigen además un JWT (pendiente). Key inválida/revocada/expirada o falta de credenciales → `401` con `ErrorResponse` JSON.
+`ApiKeyAuthenticationFilter` distingue la key del JWT por el prefijo `mv_live_`. Key inválida/revocada/expirada o falta de credenciales → `401` con `ErrorResponse` JSON. La autorización por endpoint la define cada controller con `@PreAuthorize` sobre el scope de la key (`SCOPE_<scope>`, ver Autenticacion.md); scope insuficiente → `403`.
+
+Scopes requeridos por los endpoints implementados:
+
+| Endpoint | Scope |
+|---|---|
+| `POST /api/v1/documents`, `POST /api/v1/documents/{id}/versions` | `documents:write` |
+| `GET /api/v1/documents/{id}` | `documents:read` |
+| `PUT /api/v1/tenants/{id}/identity-provider`, `PUT /api/v1/tenants/{id}/status` | `tenant:settings:write` |
 
 ### PUT `/api/v1/tenants/{tenantId}/identity-provider` — Actualizar identity provider (implementado)
 

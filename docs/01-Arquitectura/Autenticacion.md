@@ -6,7 +6,7 @@ Documentar el modelo de autenticación del sistema, que soporta tres mecanismos:
 
 ## Estado actual
 
-El modelo de datos para autenticación está definido en el schema público. Spring Security está implementado con dos filtros: `ApiKeyAuthenticationFilter` (API keys M2M) y `JwtAuthenticationFilter` (JWT multi-issuer vía JWKS con caché Redis). Login de platform_user pendiente.
+El modelo de datos para autenticación está definido en el schema público. Spring Security está implementado con dos filtros: `ApiKeyAuthenticationFilter` (API keys M2M) y `JwtAuthenticationFilter` (JWT multi-issuer vía JWKS con caché Redis). El JWT de tenant nunca autentica solo: siempre exige una API key STANDARD del mismo tenant (ADR-0011). Login de platform_user pendiente.
 
 ## Información encontrada
 
@@ -45,8 +45,8 @@ CREATE TABLE tenant_identity_provider (
   4. Obtiene el JWKS del issuer (`JwksProvider`, cacheado 10 min en Redis) y arma la clave RSA desde `n`/`e` del JWK.
   5. Verifica la firma con `Jwts.parser().verifyWith(publicKey)`. Si la firma falla, se hace `evict` del JWKS cacheado y se reintenta una vez (soporta key rotation del IdP).
   6. Valida `aud` contra el audience configurado y la expiración (con `clock_skew_seconds` del provider).
-- JWT válido → upsert de `tenant_member` (`TenantMemberService.upsert`: crea o actualiza `display_name`, `email`, `last_seen_at`) y autentica con principal `TenantUserPrincipal(memberId, tenantId, subject)`.
-- STANDARD key presente + JWT del **mismo tenant** → se combinan: authorities = scopes de la key (`SCOPE_<scope>`) y principal = miembro. Si los tenants difieren → no autentica.
+- JWT válido → si no hay key STANDARD en el request (`STANDARD_API_KEY_ATTR`) → **no autentica** (401): el JWT de tenant nunca viaja solo (ADR-0011). Un futuro JWT de platform_user tendrá otro issuer y será autenticado por su propio `PlatformUserAuthenticationProvider`.
+- JWT válido + key STANDARD del **mismo tenant** → upsert de `tenant_member` (`TenantMemberService.upsert`: crea o actualiza `display_name`, `email`, `last_seen_at`) y autentica con principal `TenantUserPrincipal(memberId, tenantId, subject)`; authorities = scopes de la key (`SCOPE_<scope>`). Si los tenants difieren → no autentica.
 - JWT inválido → `SecurityContextHolder.clearContext()` → `401` (`RestAuthenticationEntryPoint` con `ErrorResponse` JSON).
 
 ### Mecanismo 2: API Keys (api_key)
@@ -71,7 +71,7 @@ CREATE TABLE api_key (
 ```
 
 - **SERVICE:** Sin humano detrás (sync, backup, health, webhooks)
-- **STANDARD:** Uso normal, la app SIEMPRE debe exigir JWT junto a esta key
+- **STANDARD:** Uso normal; exige JWT del mismo tenant junto a la key, y el JWT a su vez exige la key (ADR-0011). Ningún request entra solo con JWT
 - Solo se almacena el hash; la key raw se muestra una única vez al crearla
 - Índice único parcial sobre `key_hash WHERE revoked_at IS NULL`
 - Al crear un tenant, el onboarding genera automáticamente la **API key inicial del admin** (`ApiKeyService.createInitial`): raw `mv_live_` + 40 hex, `key_prefix` = primeros 12 chars, hash SHA-256, `key_type = STANDARD`, `created_by_user_id = tenant_member.id` del admin. La raw se devuelve una sola vez en la respuesta de `POST /api/v1/tenants`
@@ -84,7 +84,19 @@ CREATE TABLE api_key (
 - Se hashea la raw (SHA-256, `ApiKeyHasher`) y se busca con `findByKeyHashAndRevokedAtIsNull` (usa el índice único parcial), con caché en Redis (`@Cacheable("apiKeys")`, TTL 5 min, key = hash).
 - Key desconocida, revocada (`revoked_at`) o expirada (`expires_at` pasado) → no autentica → `401` (`RestAuthenticationEntryPoint` responde con `ErrorResponse` JSON).
 - `SERVICE` válida → autentica el request. Principal = `ApiKeyPrincipal(keyId, tenantId, name, keyType)`; authorities = scopes mapeados a `SCOPE_<scope>`. Actualiza `last_used_at` de forma asíncrona (`ApiKeyUsageRecorder` con `@Async`/`@EnableAsync`, `AsyncConfig`).
-- `STANDARD` válida → **no autentica sola**: expone la key en el request (`STANDARD_API_KEY_ATTR`) y el filtro JWT exige además un JWT del **mismo tenant**. Sin JWT → `401`; con JWT → scopes de la key limitan los del miembro (authorities `SCOPE_<scope>` combinadas).
+- `STANDARD` válida → **no autentica sola**: expone la key en el request (`STANDARD_API_KEY_ATTR`) y el filtro JWT exige además un JWT del **mismo tenant**. Sin JWT → `401`; con JWT del mismo tenant → autentica con los scopes de la key (authorities `SCOPE_<scope>`). En la combinación la key viaja en `X-API-Key` y el JWT en `Authorization: Bearer`.
+
+### Autorización por scopes
+
+Los scopes de la key (`api_key.scopes`, TEXT[]) son el mecanismo de autorización por endpoint. Ambos filtros los mapean a authorities `SCOPE_<scope>` en el SecurityContext; `SecurityConfig` activa `@EnableMethodSecurity` y cada controller declara `@PreAuthorize("hasAuthority('SCOPE_...')")`. Sin el scope → `403` (`AccessDeniedException` mapeado a JSON en `GlobalExceptionHandler`). `SecurityConfig` solo resuelve quién entra (`authenticated()`); los scopes se evalúan a nivel de método, no por URL.
+
+Catálogo actual (patrón `recurso:accion`):
+
+| Recurso | Scopes |
+|---|---|
+| Documentos | `documents:read` (get), `documents:write` (crear, subir versión) |
+| Tenant (admin) | `tenant:settings:write` (identity-provider, status) |
+| Pendiente (endpoints no implementados) | `folders:*`, `permissions:*`, `api_keys:*`, `tenant:settings:read`, `audit:read`, `system:sync|backup|webhooks|health` (SERVICE) |
 
 El hash se extrajo a `apikey/service/ApiKeyHasher` (reutilizado por `ApiKeyService` y el filtro).
 
