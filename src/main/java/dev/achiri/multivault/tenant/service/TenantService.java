@@ -71,9 +71,7 @@ public class TenantService {
                 tenantMapper.toDto(activation.tenant()),
                 subscriptionMapper.toDto(onboarding.subscription(), plan),
                 tenantMemberMapper.toDto(onboarding.admin()),
-                onboarding.identityProvider() == null
-                        ? null
-                        : tenantIdentityProviderMapper.toDto(onboarding.identityProvider()),
+                tenantIdentityProviderMapper.toDto(onboarding.identityProvider()),
                 toApiKeyDto(activation.apiKey()));
     }
 

@@ -67,12 +67,9 @@ public class TenantProvisioningService {
         admin.setTenantId(tenant.getId());
         tenantMemberRepository.save(admin);
 
-        TenantIdentityProvider identityProvider = null;
-        if (request.identityProvider() != null) {
-            identityProvider = tenantIdentityProviderMapper.toEntity(request.identityProvider());
-            identityProvider.setTenantId(tenant.getId());
-            tenantIdentityProviderRepository.save(identityProvider);
-        }
+        TenantIdentityProvider identityProvider = tenantIdentityProviderMapper.toEntity(request.identityProvider());
+        identityProvider.setTenantId(tenant.getId());
+        tenantIdentityProviderRepository.save(identityProvider);
 
         return new OnboardingResult(tenant, subscription, admin, identityProvider);
     }
