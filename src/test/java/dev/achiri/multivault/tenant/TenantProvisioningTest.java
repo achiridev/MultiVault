@@ -105,7 +105,7 @@ class TenantProvisioningTest extends BaseIntegrationTest {
         assertThat(response.tenant().status()).isEqualTo(TenantStatus.ACTIVE);
         assertThat(response.apiKey().key()).startsWith("mv_live_");
         assertThat(response.apiKey().keyPrefix()).hasSize(12);
-        assertThat(response.apiKey().keyType()).isEqualTo("STANDARD");
+        assertThat(response.apiKey().keyType()).isEqualTo("SERVICE");
 
         var stored = tenantRepository.findById(tenantId).orElseThrow();
         assertThat(stored.getStatus()).isEqualTo(TenantStatus.ACTIVE);
@@ -316,7 +316,6 @@ class TenantProvisioningTest extends BaseIntegrationTest {
     }
 
     @Test
-    @WithMockUser(authorities = "SCOPE_tenant:settings:write")
     void updatesTenantIdentityProvider() throws Exception {
         Plan plan = activePlan();
 
@@ -325,8 +324,8 @@ class TenantProvisioningTest extends BaseIntegrationTest {
         tenantId = response.tenant().id();
         schemaName = response.tenant().schemaName();
 
-        mockMvc.perform(put("/api/v1/tenants/{tenantId}/identity-provider", tenantId)
-                        .with(csrf())
+        mockMvc.perform(put("/api/v1/tenants/identity-provider")
+                        .header("Authorization", "Bearer " + response.apiKey().key())
                         .contentType(APPLICATION_JSON)
                         .content("""
                                 {
@@ -346,23 +345,6 @@ class TenantProvisioningTest extends BaseIntegrationTest {
     }
 
     @Test
-    @WithMockUser(authorities = "SCOPE_tenant:settings:write")
-    void rejectsIdentityProviderForUnknownTenant() throws Exception {
-        mockMvc.perform(put("/api/v1/tenants/{tenantId}/identity-provider", UUID.randomUUID())
-                        .with(csrf())
-                        .contentType(APPLICATION_JSON)
-                        .content("""
-                                {
-                                  "issuer": "https://idp.acme.com",
-                                  "jwksUri": "https://idp.acme.com/.well-known/jwks.json",
-                                  "audience": "https://api.acme.com"
-                                }
-                                """))
-                .andExpect(status().isNotFound());
-    }
-
-    @Test
-    @WithMockUser(authorities = "SCOPE_tenant:settings:write")
     void rejectsInvalidIdentityProviderBody() throws Exception {
         Plan plan = activePlan();
 
@@ -371,8 +353,8 @@ class TenantProvisioningTest extends BaseIntegrationTest {
         tenantId = response.tenant().id();
         schemaName = response.tenant().schemaName();
 
-        mockMvc.perform(put("/api/v1/tenants/{tenantId}/identity-provider", tenantId)
-                        .with(csrf())
+        mockMvc.perform(put("/api/v1/tenants/identity-provider")
+                        .header("Authorization", "Bearer " + response.apiKey().key())
                         .contentType(APPLICATION_JSON)
                         .content("""
                                 {

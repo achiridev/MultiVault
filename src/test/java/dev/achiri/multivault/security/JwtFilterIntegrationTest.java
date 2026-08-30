@@ -105,7 +105,7 @@ class JwtFilterIntegrationTest extends BaseIntegrationTest {
     void rejectsValidJwtWithoutApiKey() throws Exception {
         String token = jwt(KEY_ID, VALID_KEY_PAIR, ISSUER, SUBJECT, AUDIENCE, Instant.now().plusSeconds(300));
 
-        mockMvc.perform(put("/api/v1/tenants/" + tenantId + "/identity-provider")
+        mockMvc.perform(put("/api/v1/tenants/identity-provider")
                         .header("Authorization", "Bearer " + token)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(validBody()))
@@ -118,7 +118,7 @@ class JwtFilterIntegrationTest extends BaseIntegrationTest {
     void rejectsJwtWithUnknownIssuer() throws Exception {
         String token = jwt(KEY_ID, VALID_KEY_PAIR, "https://unknown.test", SUBJECT, AUDIENCE, Instant.now().plusSeconds(300));
 
-        mockMvc.perform(put("/api/v1/tenants/" + tenantId + "/identity-provider")
+        mockMvc.perform(put("/api/v1/tenants/identity-provider")
                         .header("Authorization", "Bearer " + token)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(validBody()))
@@ -129,7 +129,7 @@ class JwtFilterIntegrationTest extends BaseIntegrationTest {
     void rejectsJwtWithInvalidSignature() throws Exception {
         String token = jwt(KEY_ID, OTHER_KEY_PAIR, ISSUER, SUBJECT, AUDIENCE, Instant.now().plusSeconds(300));
 
-        mockMvc.perform(put("/api/v1/tenants/" + tenantId + "/identity-provider")
+        mockMvc.perform(put("/api/v1/tenants/identity-provider")
                         .header("Authorization", "Bearer " + token)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(validBody()))
@@ -140,7 +140,7 @@ class JwtFilterIntegrationTest extends BaseIntegrationTest {
     void rejectsExpiredJwt() throws Exception {
         String token = jwt(KEY_ID, VALID_KEY_PAIR, ISSUER, SUBJECT, AUDIENCE, Instant.now().minusSeconds(60));
 
-        mockMvc.perform(put("/api/v1/tenants/" + tenantId + "/identity-provider")
+        mockMvc.perform(put("/api/v1/tenants/identity-provider")
                         .header("Authorization", "Bearer " + token)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(validBody()))
@@ -151,7 +151,7 @@ class JwtFilterIntegrationTest extends BaseIntegrationTest {
     void rejectsJwtWithWrongAudience() throws Exception {
         String token = jwt(KEY_ID, VALID_KEY_PAIR, ISSUER, SUBJECT, "https://wrong.test", Instant.now().plusSeconds(300));
 
-        mockMvc.perform(put("/api/v1/tenants/" + tenantId + "/identity-provider")
+        mockMvc.perform(put("/api/v1/tenants/identity-provider")
                         .header("Authorization", "Bearer " + token)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(validBody()))
@@ -163,7 +163,7 @@ class JwtFilterIntegrationTest extends BaseIntegrationTest {
         configureIdentityProvider(tenantId, List.of("RS512"));
         String token = jwt(KEY_ID, VALID_KEY_PAIR, ISSUER, SUBJECT, AUDIENCE, Instant.now().plusSeconds(300));
 
-        mockMvc.perform(put("/api/v1/tenants/" + tenantId + "/identity-provider")
+        mockMvc.perform(put("/api/v1/tenants/identity-provider")
                         .header("Authorization", "Bearer " + token)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(validBody()))
@@ -175,12 +175,12 @@ class JwtFilterIntegrationTest extends BaseIntegrationTest {
         String rawKey = createStandardKey(tenantId);
         String token = jwt(KEY_ID, VALID_KEY_PAIR, ISSUER, SUBJECT, AUDIENCE, Instant.now().plusSeconds(300));
 
-        mockMvc.perform(put("/api/v1/tenants/" + tenantId + "/identity-provider")
+        mockMvc.perform(put("/api/v1/tenants/identity-provider")
                         .header("Authorization", "Bearer " + token)
                         .header("X-API-Key", rawKey)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(validBody()))
-                .andExpect(status().isOk());
+                .andExpect(status().isForbidden());
     }
 
     @Test
@@ -189,7 +189,7 @@ class JwtFilterIntegrationTest extends BaseIntegrationTest {
         String rawKey = createStandardKey(otherTenantId);
         String token = jwt(KEY_ID, VALID_KEY_PAIR, ISSUER, SUBJECT, AUDIENCE, Instant.now().plusSeconds(300));
 
-        mockMvc.perform(put("/api/v1/tenants/" + tenantId + "/identity-provider")
+        mockMvc.perform(put("/api/v1/tenants/identity-provider")
                         .header("Authorization", "Bearer " + token)
                         .header("X-API-Key", rawKey)
                         .contentType(MediaType.APPLICATION_JSON)
@@ -199,7 +199,7 @@ class JwtFilterIntegrationTest extends BaseIntegrationTest {
 
     @Test
     void rejectsMalformedJwt() throws Exception {
-        mockMvc.perform(put("/api/v1/tenants/" + tenantId + "/identity-provider")
+        mockMvc.perform(put("/api/v1/tenants/identity-provider")
                         .header("Authorization", "Bearer not-a-jwt")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(validBody()))
@@ -217,7 +217,7 @@ class JwtFilterIntegrationTest extends BaseIntegrationTest {
                 .signWith(VALID_KEY_PAIR.getPrivate(), Jwts.SIG.RS256)
                 .compact();
 
-        mockMvc.perform(put("/api/v1/tenants/" + tenantId + "/identity-provider")
+        mockMvc.perform(put("/api/v1/tenants/identity-provider")
                         .header("Authorization", "Bearer " + token)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(validBody()))
@@ -226,7 +226,7 @@ class JwtFilterIntegrationTest extends BaseIntegrationTest {
 
     @Test
     void returnsUnauthorizedErrorResponseBody() throws Exception {
-        mockMvc.perform(put("/api/v1/tenants/" + tenantId + "/identity-provider")
+        mockMvc.perform(put("/api/v1/tenants/identity-provider")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(validBody()))
                 .andExpect(status().isUnauthorized())
@@ -239,22 +239,22 @@ class JwtFilterIntegrationTest extends BaseIntegrationTest {
         String rawKey = createStandardKey(tenantId);
         String tokenA = jwt(KEY_ID, VALID_KEY_PAIR, ISSUER, SUBJECT, AUDIENCE, Instant.now().plusSeconds(300));
 
-        mockMvc.perform(put("/api/v1/tenants/" + tenantId + "/identity-provider")
+        mockMvc.perform(put("/api/v1/tenants/identity-provider")
                         .header("Authorization", "Bearer " + tokenA)
                         .header("X-API-Key", rawKey)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(validBody()))
-                .andExpect(status().isOk());
+                .andExpect(status().isForbidden());
 
         serveRotatedJwks = true;
         String tokenB = jwt(ROTATED_KEY_ID, ROTATED_KEY_PAIR, ISSUER, SUBJECT, AUDIENCE, Instant.now().plusSeconds(300));
 
-        mockMvc.perform(put("/api/v1/tenants/" + tenantId + "/identity-provider")
+        mockMvc.perform(put("/api/v1/tenants/identity-provider")
                         .header("Authorization", "Bearer " + tokenB)
                         .header("X-API-Key", rawKey)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(validBody()))
-                .andExpect(status().isOk());
+                .andExpect(status().isForbidden());
     }
 
     @Test
@@ -262,24 +262,24 @@ class JwtFilterIntegrationTest extends BaseIntegrationTest {
         String rawKey = createStandardKey(tenantId);
         String firstToken = jwt(KEY_ID, VALID_KEY_PAIR, ISSUER, SUBJECT, AUDIENCE, Instant.now().plusSeconds(300));
 
-        mockMvc.perform(put("/api/v1/tenants/" + tenantId + "/identity-provider")
+        mockMvc.perform(put("/api/v1/tenants/identity-provider")
                         .header("Authorization", "Bearer " + firstToken)
                         .header("X-API-Key", rawKey)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(validBody()))
-                .andExpect(status().isOk());
+                .andExpect(status().isForbidden());
 
         TenantMember firstLogin = tenantMemberRepository.findByTenantIdAndSubject(tenantId, SUBJECT).orElseThrow();
 
         String secondToken = jwt(KEY_ID, VALID_KEY_PAIR, ISSUER, SUBJECT, AUDIENCE, Instant.now().plusSeconds(300),
                 "updated@test.com", "User Updated");
 
-        mockMvc.perform(put("/api/v1/tenants/" + tenantId + "/identity-provider")
+        mockMvc.perform(put("/api/v1/tenants/identity-provider")
                         .header("Authorization", "Bearer " + secondToken)
                         .header("X-API-Key", rawKey)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(validBody()))
-                .andExpect(status().isOk());
+                .andExpect(status().isForbidden());
 
         TenantMember updated = tenantMemberRepository.findByTenantIdAndSubject(tenantId, SUBJECT).orElseThrow();
         assertThat(updated.getId()).isEqualTo(firstLogin.getId());

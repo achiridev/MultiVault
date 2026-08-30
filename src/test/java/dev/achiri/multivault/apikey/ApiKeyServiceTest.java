@@ -6,6 +6,7 @@ import dev.achiri.multivault.apikey.repository.ApiKeyRepository;
 import dev.achiri.multivault.apikey.service.ApiKeyHasher;
 import dev.achiri.multivault.apikey.service.ApiKeyResult;
 import dev.achiri.multivault.apikey.service.ApiKeyService;
+import dev.achiri.multivault.infrastructure.security.apikey.Scopes;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
@@ -61,10 +62,10 @@ class ApiKeyServiceTest {
 
         assertThat(saved.getKeyHash()).isEqualTo(sha256Hex(result.rawKey()));
         assertThat(saved.getKeyHash()).isNotEqualTo(result.rawKey());
-        assertThat(saved.getKeyType()).isEqualTo(ApiKeyType.STANDARD);
+        assertThat(saved.getKeyType()).isEqualTo(ApiKeyType.SERVICE);
         assertThat(saved.getTenantId()).isEqualTo(tenantId);
         assertThat(saved.getCreatedByUserId()).isEqualTo(memberId);
-        assertThat(saved.getScopes()).isEmpty();
+        assertThat(saved.getScopes()).containsExactly(Scopes.WILDCARD);
     }
 
     private String sha256Hex(String value) {

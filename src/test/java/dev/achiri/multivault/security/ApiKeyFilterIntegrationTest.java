@@ -29,7 +29,7 @@ class ApiKeyFilterIntegrationTest extends BaseIntegrationTest {
 
     private static final UUID USER_ID = UUID.randomUUID();
     private static final String PROTECTED_PATH =
-            "/api/v1/tenants/" + UUID.randomUUID() + "/identity-provider";
+            "/api/v1/tenants/identity-provider";
 
     @Autowired
     private MockMvc mockMvc;
@@ -76,7 +76,7 @@ class ApiKeyFilterIntegrationTest extends BaseIntegrationTest {
                         .header("Authorization", "Bearer " + rawKey)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(validBody()))
-                .andExpect(status().isNotFound());
+                .andExpect(status().isOk());
     }
 
     @Test
@@ -149,7 +149,7 @@ class ApiKeyFilterIntegrationTest extends BaseIntegrationTest {
                         .header("X-API-Key", rawKey)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(validBody()))
-                .andExpect(status().isNotFound());
+                .andExpect(status().isOk());
     }
 
     @Test
@@ -180,7 +180,7 @@ class ApiKeyFilterIntegrationTest extends BaseIntegrationTest {
                         .header("X-API-Key", rawKey)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(validBody()))
-                .andExpect(status().isNotFound());
+                .andExpect(status().isOk());
     }
 
     @Test
