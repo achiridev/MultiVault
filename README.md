@@ -245,8 +245,8 @@ All endpoints are prefixed with `/api/v1`. Only `POST /tenants` is public; all o
 | Method | Endpoint | Description | Auth |
 |---|---|---|---|
 | `POST` | `/tenants` | Create tenant (onboarding) | Public |
-| `PUT` | `/tenants/{tenantId}/identity-provider` | Update OIDC config | API Key / JWT |
-| `PUT` | `/tenants/{tenantId}/status` | Cancel, suspend, or reinstate | API Key / JWT |
+| `PUT` | `/tenants/identity-provider` | Update OIDC config | API Key SERVICE |
+| `PUT` | `/tenants/status` | Cancel, suspend, or reinstate | API Key SERVICE |
 
 ### Documents (per-tenant scope)
 

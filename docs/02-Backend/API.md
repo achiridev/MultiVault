@@ -6,7 +6,7 @@ Documentar los endpoints REST expuestos por el backend.
 
 ## Estado actual
 
-Implementado: `POST /api/v1/tenants` (creación de organización), `PUT /api/v1/tenants/{tenantId}/identity-provider`, y el flujo de documentos (crear, subir versión, obtener). El resto de endpoints se infieren del modelo de datos. El proyecto incluye `spring-boot-starter-webmvc`, confirmando API REST sobre Servlet.
+Implementado: `POST /api/v1/tenants` (creación de organización), `PUT /api/v1/tenants/identity-provider` (solo SERVICE, ADR-0012), y el flujo de documentos (crear, subir versión, obtener). El resto de endpoints se infieren del modelo de datos. El proyecto incluye `spring-boot-starter-webmvc`, confirmando API REST sobre Servlet.
 
 ### POST `/api/v1/tenants` — Crear organización (implementado)
 
@@ -58,11 +58,11 @@ Scopes requeridos por los endpoints implementados:
 |---|---|
 | `POST /api/v1/documents`, `POST /api/v1/documents/{id}/versions` | `documents:write` |
 | `GET /api/v1/documents/{id}` | `documents:read` |
-| `PUT /api/v1/tenants/{id}/identity-provider`, `PUT /api/v1/tenants/{id}/status` | `tenant:settings:write` |
+| `PUT /api/v1/tenants/identity-provider`, `PUT /api/v1/tenants/status` | `tenant:settings:write` (solo credencial SERVICE, ADR-0012) |
 
-### PUT `/api/v1/tenants/{tenantId}/identity-provider` — Actualizar identity provider (implementado)
+### PUT `/api/v1/tenants/identity-provider` — Actualizar identity provider (implementado)
 
-Actualiza (upsert) la configuración OIDC/JWT del tenant. `404` si el tenant no existe; `400` con body inválido; `200` con el DTO actualizado. Registra auditoría `TENANT_IDENTITY_PROVIDER_UPDATED`.
+Solo acepta credenciales SERVICE (llave maestra del tenant). El tenant operado es el del principal autenticado, no hay `tenantId` en la ruta (ADR-0012). Actualiza (upsert) la configuración OIDC/JWT del tenant. `404` si el tenant no existe; `400` con body inválido; `403` si la credencial no es SERVICE (p. ej. STANDARD+JWT o JWT puro); `200` con el DTO actualizado. Registra auditoría `TENANT_IDENTITY_PROVIDER_UPDATED`.
 
 Request:
 ```json
@@ -77,9 +77,9 @@ Request:
 
 `allowedAlgorithms` y `clockSkewSeconds` opcionales con defaults (`RS256` / `60`).
 
-### PUT `/api/v1/tenants/{tenantId}/status` — Actualizar estado del tenant (implementado)
+### PUT `/api/v1/tenants/status` — Actualizar estado del tenant (implementado)
 
-Cambia el estado de un tenant. Valida transiciones permitidas (ADR-0009). `404` si el tenant no existe; `400` con body inválido; `409` si la transición no es válida; `200` con el DTO de estado actualizado.
+Solo acepta credenciales SERVICE; el tenant operado es el del principal autenticado (ADR-0012). Cambia el estado de un tenant. Valida transiciones permitidas (ADR-0009). `404` si el tenant no existe; `400` con body inválido; `403` si la credencial no es SERVICE; `409` si la transición no es válida; `200` con el DTO de estado actualizado.
 
 **Transiciones válidas:**
 
@@ -189,8 +189,8 @@ Existen controladores REST (`TenantController` en `/api/v1/tenants`) sobre Servl
 | Método | Path | Descripción |
 |---|---|---|
 | POST | `/api/v1/tenants` | Crear nuevo tenant |
-| PUT | `/api/v1/tenants/{id}/identity-provider` | Actualizar identity provider |
-| PUT | `/api/v1/tenants/{id}/status` | ✅ Actualizar estado (cancel/suspend/reinstate) |
+| PUT | `/api/v1/tenants/identity-provider` | ✅ Actualizar identity provider (solo SERVICE, ADR-0012) |
+| PUT | `/api/v1/tenants/status` | ✅ Actualizar estado (cancel/suspend/reinstate; solo SERVICE, ADR-0012) |
 | GET | `/api/v1/tenants/{id}` | Obtener tenant |
 | GET | `/api/v1/tenants` | Listar tenants |
 | PATCH | `/api/v1/tenants/{id}` | Actualizar tenant |

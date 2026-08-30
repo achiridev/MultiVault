@@ -6,7 +6,7 @@ Documentar el modelo de autenticación del sistema, que soporta tres mecanismos:
 
 ## Estado actual
 
-El modelo de datos para autenticación está definido en el schema público. Spring Security está implementado con dos filtros: `ApiKeyAuthenticationFilter` (API keys M2M) y `JwtAuthenticationFilter` (JWT multi-issuer vía JWKS con caché Redis). El JWT de tenant nunca autentica solo: siempre exige una API key STANDARD del mismo tenant (ADR-0011). Login de platform_user pendiente.
+El modelo de datos para autenticación está definido en el schema público. Spring Security está implementado con dos filtros: `ApiKeyAuthenticationFilter` (API keys M2M) y `JwtAuthenticationFilter` (JWT multi-issuer vía JWKS con caché Redis). El JWT de tenant nunca autentica solo: siempre exige una API key STANDARD del mismo tenant (ADR-0011). La key inicial del onboarding es un **SERVICE key con scope `*` (llave maestra)**, y los endpoints de configuración del tenant derivan su tenant del principal autenticado, sin path (ADR-0012). Login de platform_user pendiente.
 
 ## Información encontrada
 
@@ -27,7 +27,7 @@ CREATE TABLE tenant_identity_provider (
 );
 ```
 
-- Sin fila en esta tabla → ningún JWT de ese tenant puede validarse. Por eso es **obligatoria al crear el tenant** (`POST /api/v1/tenants` rechaza con 400 si falta) y se actualiza con `PUT /api/v1/tenants/{id}/identity-provider` (ADR-0006).
+- Sin fila en esta tabla → ningún JWT de ese tenant puede validarse. Por eso es **obligatoria al crear el tenant** (`POST /api/v1/tenants` rechaza con 400 si falta) y se actualiza con `PUT /api/v1/tenants/identity-provider` (ADR-0006), que solo acepta credenciales SERVICE y opera sobre el tenant del principal autenticado (ADR-0012).
 - El algoritmo `'none'` está explícitamente prohibido
 - Cada tenant usa su propio `issuer`, lo que permite validar JWTs de múltiples fuentes
 
@@ -70,11 +70,11 @@ CREATE TABLE api_key (
 );
 ```
 
-- **SERVICE:** Sin humano detrás (sync, backup, health, webhooks)
+- **SERVICE:** Sin humano detrás (sync, backup, health, webhooks, **administración del tenant: identity-provider y status**). Autentica solo, sin JWT.
 - **STANDARD:** Uso normal; exige JWT del mismo tenant junto a la key, y el JWT a su vez exige la key (ADR-0011). Ningún request entra solo con JWT
 - Solo se almacena el hash; la key raw se muestra una única vez al crearla
 - Índice único parcial sobre `key_hash WHERE revoked_at IS NULL`
-- Al crear un tenant, el onboarding genera automáticamente la **API key inicial del admin** (`ApiKeyService.createInitial`): raw `mv_live_` + 40 hex, `key_prefix` = primeros 12 chars, hash SHA-256, `key_type = STANDARD`, `created_by_user_id = tenant_member.id` del admin. La raw se devuelve una sola vez en la respuesta de `POST /api/v1/tenants`
+- Al crear un tenant, el onboarding genera automáticamente la **API key inicial del admin** (`ApiKeyService.createInitial`): raw `mv_live_` + 40 hex, `key_prefix` = primeros 12 chars, hash SHA-256, `key_type = SERVICE`, `scopes = ['*']` (llave maestra, expande al catálogo completo de scopes, ADR-0012), `created_by_user_id = tenant_member.id` del admin. La raw se devuelve una sola vez en la respuesta de `POST /api/v1/tenants`. El scope `*` se expande en `ApiKeyAuthenticationFilter` (y en la combinación STANDARD+JWT) a `Scopes.all()` → authorities reales `SCOPE_<scope>`.
 
 ### Validación de API keys por request (`ApiKeyAuthenticationFilter`)
 
@@ -95,10 +95,14 @@ Catálogo actual (patrón `recurso:accion`):
 | Recurso | Scopes |
 |---|---|
 | Documentos | `documents:read` (get), `documents:write` (crear, subir versión) |
-| Tenant (admin) | `tenant:settings:write` (identity-provider, status) |
+| Tenant (admin) | `tenant:settings:write` (identity-provider, status) — ejercido por la key SERVICE del propio tenant (ADR-0012) |
 | Pendiente (endpoints no implementados) | `folders:*`, `permissions:*`, `api_keys:*`, `tenant:settings:read`, `audit:read`, `system:sync|backup|webhooks|health` (SERVICE) |
 
 El hash se extrajo a `apikey/service/ApiKeyHasher` (reutilizado por `ApiKeyService` y el filtro).
+
+### Tenant del request en endpoints de configuración (service-to-service)
+
+Los endpoints de configuración del tenant (`PUT /api/v1/tenants/identity-provider`, `PUT /api/v1/tenants/status`) son **solo de credenciales SERVICE** (ADR-0012): `CurrentTenant.serviceTenantId()` lee el `tenantId` del `ApiKeyPrincipal` si es `SERVICE`; cualquier otra credencial (STANDARD+JWT, JWT puro) responde `403`. Al derivar el tenant del principal (y no del path, que ya no existe), un proceso solo opera sobre su propio tenant, eliminando el vector IDOR cross-tenant.
 
 ### Resolución del tenant por request (`TenantContextFilter`)
 

@@ -53,7 +53,7 @@ Implementado en `POST /api/v1/tenants` (ADR-0004). Tres límites transaccionales
 
 ### Ciclo de vida del tenant (ADR-0009)
 
-`TenantLifecycleService` gestiona las transiciones de estado vía `PUT /api/v1/tenants/{id}/status`:
+`TenantLifecycleService` gestiona las transiciones de estado vía `PUT /api/v1/tenants/status` (solo credencial SERVICE, ADR-0012):
 
 #### Transiciones válidas
 

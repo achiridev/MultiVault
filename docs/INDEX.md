@@ -61,6 +61,7 @@ Punto de entrada único. Lee este archivo primero, luego los documentos relevant
 | [ADR-0009](06-Decisiones/ADR-0009.md) | Ciclo de vida de tenants (cancelación, suspensión, reactivación) |
 | [ADR-0010](06-Decisiones/ADR-0010.md) | Streaming de uploads y transacción corta en documentos |
 | [ADR-0011](06-Decisiones/ADR-0011.md) | El JWT de tenant exige API key; autorización por scopes |
+| [ADR-0012](06-Decisiones/ADR-0012.md) | API key inicial SERVICE como llave maestra; tenant derivado del principal |
 
 ## 99-Templates
 
