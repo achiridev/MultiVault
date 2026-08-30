@@ -67,7 +67,11 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
             List<SimpleGrantedAuthority> authorities = new ArrayList<>();
             if (standardKey != null) {
-                standardKey.scopes().forEach(scope -> authorities.add(new SimpleGrantedAuthority("SCOPE_" + scope)));
+                standardKey.scopes().stream()
+                        .flatMap(scope -> dev.achiri.multivault.infrastructure.security.apikey.Scopes.WILDCARD.equals(scope)
+                                ? dev.achiri.multivault.infrastructure.security.apikey.Scopes.all().stream()
+                                : java.util.stream.Stream.of(scope))
+                        .forEach(scope -> authorities.add(new SimpleGrantedAuthority("SCOPE_" + scope)));
             }
 
             TenantUserPrincipal principal =

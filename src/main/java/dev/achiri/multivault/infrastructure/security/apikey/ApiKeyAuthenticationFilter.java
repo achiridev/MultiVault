@@ -59,6 +59,9 @@ public class ApiKeyAuthenticationFilter extends OncePerRequestFilter {
 
         ApiKeyPrincipal principal = new ApiKeyPrincipal(key.keyId(), key.tenantId(), key.name(), key.keyType());
         List<SimpleGrantedAuthority> authorities = key.scopes().stream()
+                .flatMap(scope -> Scopes.WILDCARD.equals(scope)
+                        ? Scopes.all().stream()
+                        : java.util.stream.Stream.of(scope))
                 .map(scope -> new SimpleGrantedAuthority("SCOPE_" + scope))
                 .toList();
 

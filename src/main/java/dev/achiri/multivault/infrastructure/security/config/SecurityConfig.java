@@ -30,8 +30,8 @@ public class SecurityConfig {
                 .exceptionHandling(exception -> exception.authenticationEntryPoint(restAuthenticationEntryPoint))
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers(HttpMethod.POST, "/api/v1/tenants").permitAll()
-                        .requestMatchers(HttpMethod.PUT, "/api/v1/tenants/*/identity-provider").authenticated()
-                        .requestMatchers(HttpMethod.PUT, "/api/v1/tenants/*/status").authenticated()
+                        .requestMatchers(HttpMethod.PUT, "/api/v1/tenants/identity-provider").authenticated()
+                        .requestMatchers(HttpMethod.PUT, "/api/v1/tenants/status").authenticated()
                         .requestMatchers(HttpMethod.POST, "/api/v1/documents").authenticated()
                         .requestMatchers(HttpMethod.POST, "/api/v1/documents/*/versions").authenticated()
                         .requestMatchers(HttpMethod.GET, "/api/v1/documents/*").authenticated()
