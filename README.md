@@ -63,7 +63,8 @@ The system is built with a strong emphasis on security (WORM audit logs, API key
 
 - **Schema-per-tenant isolation** — each tenant gets its own PostgreSQL schema with independent Flyway migrations
 - **Multi-issuer JWT authentication** — per-tenant OIDC Identity Providers with JWKS caching and key rotation support
-- **Dual API key system** — SERVICE keys (machine-to-machine) and STANDARD keys (requires JWT combination)
+- **Dual API key system** — SERVICE keys (machine-to-machine) and STANDARD keys (requires a JWT from the same tenant). The initial onboarding key is a SERVICE master key that grants all scopes (`*`)
+- **Cross-tenant protection** — the tenant-settings endpoints (`identity-provider`, `status`) are service-to-service, restrict to SERVICE keys, and derive the tenant from the authenticated principal instead of the URL path, closing the IDOR vector
 - **Document versioning** — immutable version history with server-side SHA-256 checksums
 - **WORM audit trail** — write-once-read-many audit log with event-driven persistence (AFTER_COMMIT)
 - **S3-compatible storage** — Backblaze B2 integration with streaming uploads and constant memory usage
@@ -285,7 +286,7 @@ curl -X POST http://localhost:8080/api/v1/tenants \
   }'
 ```
 
-The response includes the admin API key (shown only once).
+The response includes the initial SERVICE master key (shown only once), which has the wildcard scope `*` and can manage the tenant's own configuration.
 
 ## Multi-Tenancy
 
@@ -322,7 +323,7 @@ PostgreSQL
 
 ## Testing
 
-The project includes **29 test files** covering unit and integration tests:
+The project includes **28 test files** covering unit and integration tests:
 
 - **Unit tests** — Pure logic with Mockito (entities, mappers, hashers, validators)
 - **Integration tests** — Full HTTP-layer testing with `MockMvc` against real PostgreSQL 16 and Redis 7 via Testcontainers
@@ -357,7 +358,7 @@ Full project documentation is available in the [`docs/`](docs/INDEX.md) director
 - [Security Considerations](docs/01-Arquitectura/Seguridad.md)
 - [API Reference](docs/02-Backend/API.md)
 - [Database Schema](docs/02-Backend/BaseDatos.md)
-- [Architecture Decision Records](docs/06-Decisiones/) — 10 ADRs documenting key technical decisions
+- [Architecture Decision Records](docs/06-Decisiones/) — 12 ADRs documenting key technical decisions
 
 ## License
 
