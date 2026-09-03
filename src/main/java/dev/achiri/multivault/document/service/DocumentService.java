@@ -17,6 +17,7 @@ import dev.achiri.multivault.document.repository.DocumentRepository;
 import dev.achiri.multivault.document.repository.DocumentVersionRepository;
 import dev.achiri.multivault.infrastructure.persistence.tenant.context.TenantContext;
 import dev.achiri.multivault.infrastructure.storage.DocumentStorageService;
+import dev.achiri.multivault.tenant.usage.StorageQuotaService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -38,6 +39,7 @@ public class DocumentService {
     private final AuditEventPublisher auditEventPublisher;
     private final DocumentStorageService documentStorageService;
     private final UploadPolicy uploadPolicy;
+    private final StorageQuotaService storageQuotaService;
     private final TransactionTemplate transactionTemplate;
 
     public DocumentResponse create(MultipartFile file, CreateDocumentRequest request, AuditContext auditContext) {
@@ -48,6 +50,7 @@ public class DocumentService {
 
         String checksum = checksumOf(file);
         long sizeBytes = file.getSize();
+        storageQuotaService.assertCapacity(auditContext.tenantId(), sizeBytes);
 
         Document document = transactionTemplate.execute(tx -> {
             Document fresh = new Document();
@@ -73,6 +76,8 @@ public class DocumentService {
                 document.setCurrentVersionId(version.getId());
                 documentRepository.save(document);
 
+                storageQuotaService.addStorageBytes(auditContext.tenantId(), sizeBytes);
+
                 publishAudit(auditContext, "DOCUMENT_CREATED", "document", document.getId(),
                         Map.of("document_name", name, "version_number", 1));
 
@@ -97,6 +102,7 @@ public class DocumentService {
 
         String checksum = checksumOf(file);
         long sizeBytes = file.getSize();
+        storageQuotaService.assertCapacity(auditContext.tenantId(), sizeBytes);
         String storageKey = storageKey(documentId, versionNumber, checksum);
 
         upload(storageKey, file, mimeType, sizeBytes);
@@ -108,6 +114,8 @@ public class DocumentService {
                 DocumentVersion version = saveVersion(documentId, auditContext.actorUserId(), versionNumber,
                         name, storageKey, mimeType, sizeBytes, checksum);
                 document.setCurrentVersionId(version.getId());
+
+                storageQuotaService.addStorageBytes(auditContext.tenantId(), sizeBytes);
 
                 publishAudit(auditContext, "DOCUMENT_VERSION_UPLOADED", "document_version", version.getId(),
                         Map.of(

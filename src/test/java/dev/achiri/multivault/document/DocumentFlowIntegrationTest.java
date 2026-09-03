@@ -11,6 +11,7 @@ import dev.achiri.multivault.common.exception.StorageException;
 import dev.achiri.multivault.document.service.DocumentHashUtil;
 import dev.achiri.multivault.infrastructure.storage.DocumentStorageService;
 import dev.achiri.multivault.plan.model.Plan;
+import dev.achiri.multivault.plan.model.PlanCode;
 import dev.achiri.multivault.plan.repository.PlanRepository;
 import dev.achiri.multivault.support.BaseIntegrationTest;
 import dev.achiri.multivault.tenant.dto.CreateTenantRequest;
@@ -569,8 +570,121 @@ class DocumentFlowIntegrationTest extends BaseIntegrationTest {
                 .andExpect(status().isBadRequest());
     }
 
+    @Test
+    void createIncrementsPlanStorageUsage() throws Exception {
+        doNothing().when(documentStorageService).upload(anyString(), any(), anyString(), anyLong());
+
+        CreateTenantResponse tenant = createTenantWithPlan("Acme Usage", "sub_usage", quotaPlan());
+        String serviceKey = createServiceKey();
+        UUID ownerUserId = UUID.randomUUID();
+
+        MockMultipartFile file = new MockMultipartFile(
+                "file", "Usage.pdf", "application/pdf", new byte[5]);
+
+        mockMvc.perform(multipart("/api/v1/documents")
+                        .file(file)
+                        .header(AUTHORIZATION, "Bearer " + serviceKey)
+                        .param("name", "Usage.pdf")
+                        .param("mimeType", "application/pdf")
+                        .param("ownerUserId", ownerUserId.toString()))
+                .andExpect(status().isCreated());
+
+        Long used = jdbcTemplate.queryForObject(
+                "SELECT storage_bytes_used FROM public.tenant_usage WHERE tenant_id = ?",
+                Long.class, tenant.tenant().id());
+        assertThat(used).isEqualTo(5L);
+    }
+
+    @Test
+    void rejectsDocumentExceedingPlanStorage() throws Exception {
+        doNothing().when(documentStorageService).upload(anyString(), any(), anyString(), anyLong());
+
+        CreateTenantResponse tenant = createTenantWithPlan("Acme Quota", "sub_quota", quotaPlan());
+        String serviceKey = createServiceKey();
+        UUID ownerUserId = UUID.randomUUID();
+
+        MockMultipartFile file = new MockMultipartFile(
+                "file", "Big.pdf", "application/pdf", new byte[100]);
+
+        mockMvc.perform(multipart("/api/v1/documents")
+                        .file(file)
+                        .header(AUTHORIZATION, "Bearer " + serviceKey)
+                        .param("name", "Big.pdf")
+                        .param("mimeType", "application/pdf")
+                        .param("ownerUserId", ownerUserId.toString()))
+                .andExpect(status().isConflict());
+
+        String schema = jdbcTemplate.queryForObject(
+                "SELECT schema_name FROM public.tenant WHERE id = ?",
+                String.class, tenant.tenant().id());
+        Integer documentCount = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM " + schema + ".document", Integer.class);
+        assertThat(documentCount).isZero();
+
+        Long used = jdbcTemplate.queryForObject(
+                "SELECT storage_bytes_used FROM public.tenant_usage WHERE tenant_id = ?",
+                Long.class, tenant.tenant().id());
+        assertThat(used).isZero();
+    }
+
+    @Test
+    void rejectsVersionExceedingAccumulatedStorage() throws Exception {
+        doNothing().when(documentStorageService).upload(anyString(), any(), anyString(), anyLong());
+
+        CreateTenantResponse tenant = createTenantWithPlan("Acme Accum", "sub_accum", quotaPlan());
+        String schema = tenant.tenant().schemaName();
+        String serviceKey = createServiceKey();
+        UUID ownerUserId = UUID.randomUUID();
+
+        MockMultipartFile fileV1 = new MockMultipartFile(
+                "file", "V1.pdf", "application/pdf", new byte[40]);
+
+        MvcResult createResult = mockMvc.perform(multipart("/api/v1/documents")
+                        .file(fileV1)
+                        .header(AUTHORIZATION, "Bearer " + serviceKey)
+                        .param("name", "V1.pdf")
+                        .param("mimeType", "application/pdf")
+                        .param("ownerUserId", ownerUserId.toString()))
+                .andExpect(status().isCreated())
+                .andReturn();
+        UUID documentId = UUID.fromString(body(createResult).get("id").asText());
+
+        MockMultipartFile fileV2 = new MockMultipartFile(
+                "file", "V2.pdf", "application/pdf", new byte[40]);
+
+        mockMvc.perform(multipart("/api/v1/documents/{documentId}/versions", documentId)
+                        .file(fileV2)
+                        .header(AUTHORIZATION, "Bearer " + serviceKey)
+                        .param("name", "V2.pdf")
+                        .param("mimeType", "application/pdf")
+                        .param("ownerUserId", ownerUserId.toString()))
+                .andExpect(status().isConflict());
+
+        Long used = jdbcTemplate.queryForObject(
+                "SELECT storage_bytes_used FROM public.tenant_usage WHERE tenant_id = ?",
+                Long.class, tenant.tenant().id());
+        assertThat(used).isEqualTo(40L);
+
+        Integer versionCount = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM " + schema + ".document_version WHERE document_id = ?",
+                Integer.class, documentId);
+        assertThat(versionCount).isEqualTo(1);
+    }
+
+    private Plan quotaPlan() {
+        Plan free = planRepository.findAll().stream()
+                .filter(p -> p.getCode() == PlanCode.FREE)
+                .findFirst().orElseThrow();
+        free.setMaxStorageBytes(60L);
+        return planRepository.saveAndFlush(free);
+    }
+
     private CreateTenantResponse createTenant(String name, String subject) {
         Plan plan = planRepository.findAll().stream().filter(Plan::getIsActive).findFirst().orElseThrow();
+        return createTenantWithPlan(name, subject, plan);
+    }
+
+    private CreateTenantResponse createTenantWithPlan(String name, String subject, Plan plan) {
         CreateTenantResponse response = tenantService.create(new CreateTenantRequest(
                 name,
                 plan.getId(),

@@ -140,6 +140,11 @@ public class GlobalExceptionHandler {
         return ResponseEntity.internalServerError().body(error(500, "Error de almacenamiento"));
     }
 
+    @ExceptionHandler(AlmacenamientoPlanExcedidoException.class)
+    public ResponseEntity<ErrorResponse> handleAlmacenamientoPlanExcedido(AlmacenamientoPlanExcedidoException ex) {
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(error(409, ex.getMessage()));
+    }
+
     @ExceptionHandler(EstadoTransicionInvalidoException.class)
     public ResponseEntity<ErrorResponse> handleEstadoTransicionInvalido(EstadoTransicionInvalidoException ex) {
         ErrorResponse error = new ErrorResponse(
