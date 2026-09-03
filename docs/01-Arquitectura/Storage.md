@@ -6,7 +6,7 @@ Documentar la estrategia de almacenamiento de documentos, que combina PostgreSQL
 
 ## Estado actual
 
-**Implementado.** Backblaze B2 como backend de object storage via AWS SDK v2 S3. Los endpoints de documentos (`POST /api/v1/documents`, `POST /api/v1/documents/{id}/versions`) aceptan `multipart/form-data` con el archivo binario. Checksum SHA-256 y sizeBytes se calculan server-side desde los bytes reales del archivo.
+**Implementado.** Backblaze B2 como backend de object storage via AWS SDK v2 S3. Los endpoints de documentos (`POST /api/v1/documents`, `POST /api/v1/documents/{id}/versions`) aceptan `multipart/form-data` con el archivo binario. Checksum SHA-256 y sizeBytes se calculan server-side desde los bytes reales del archivo. `DocumentService` valida la cuota de almacenamiento del plan antes de subir el archivo y mantiene `tenant_usage.storage_bytes_used` con un `UPDATE` atómico (ADR-0013).
 
 ## Arquitectura de storage
 
@@ -60,6 +60,15 @@ CREATE TABLE document_version (
 
 Si falla la subida a B2 (paso 5), la transacción completa hace rollback.
 
+### Cuota de almacenamiento por plan
+
+`Plan.max_storage_bytes` limita el almacenamiento total del tenant (seed: FREE 1GB / PRO 100GB / BUSINESS 500GB / ENTERPRISE 1TB). `DocumentService` (`create` y `addVersion`) consulta `StorageQuotaService`:
+
+1. `assertCapacity(tenantId, sizeBytes)` valida que `tenant_usage.storage_bytes_used + sizeBytes <= plan.max_storage_bytes` **antes** de subir a B2. Si excede → `AlmacenamientoPlanExcedidoException` → HTTP 409 y no se crea ni sube nada.
+2. Dentro de la misma transacción que persiste la `document_version`, se ejecuta el `UPDATE` atómico `tenant_usage.storage_bytes_used = storage_bytes_used + ?`. Al ir en la misma TX, si falla la subida/guardado el rollback deja el contador sin desincronizar.
+
+El plan del tenant se resuelve vía `Tenant.current_plan_id` → `plan.code`. Ver ADR-0013.
+
 ### Naming del storage key
 
 ```
@@ -104,4 +113,3 @@ storage:
 - [ ] Implementar verificación de checksum en descargas
 - [ ] Definir TTL/limpieza de versiones eliminadas lógicamente
 - [ ] Endpoint de descarga (`GET /api/v1/documents/{id}/versions/{versionId}`)
-- [ ] Límite de tamaño por documento/versión

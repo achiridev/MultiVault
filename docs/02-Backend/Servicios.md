@@ -12,6 +12,8 @@ Documentar la capa de servicios de la aplicación, sus responsabilidades y depen
 
 `DocumentService` (`document/service/`, `@Transactional`) implementa el flujo de documentos metadata-only (ADR-0009 / decisión de storage): `create` inserta `document` (status ACTIVE; el trigger DB crea la fila OWNER) + versión v1 y repunta `current_version_id`; `addVersion` calcula `version_number = max + 1` (la UNIQUE `(document_id, version_number)` cubre la concurrencia), crea la versión inmutable y repunta el current; `get` devuelve el documento con su versión actual. El `storageKey` lo genera la app como `{schema}/{documentId}/{versionNumber}/{checksum}`; el actor (`owner_user_id`/`created_by`) lo resuelve `DocumentController` desde el principal (JWT → `memberId`; key SERVICE → `ownerUserId` del body, obligatorio).
 
+`StorageQuotaService` (`tenant/usage/`) enforce la cuota de almacenamiento del plan (ADR-0013): `assertCapacity(tenantId, sizeBytes)` valida la capacidad antes de subir un archivo (exceso → `AlmacenamientoPlanExcedidoException`, HTTP 409) y `addStorageBytes(tenantId, bytes)` incrementa `tenant_usage.storage_bytes_used` con un `UPDATE` atómico dentro de la misma transacción que persiste la versión. El plan proviene de `Tenant.current_plan_id` → `plan.max_storage_bytes`.
+
 ## Información encontrada
 
 El diseño de los servicios se infiere de las entidades y la funcionalidad esperada.
@@ -47,6 +49,7 @@ El diseño de los servicios se infiere de las entidades y la funcionalidad esper
 - El path materializado se actualiza al mover carpetas
 - Al crear un documento, se inserta automáticamente el permiso OWNER (via trigger DB)
 - `max_users` limita los miembros activos por tenant (`tenant_member`); no aplica a `platform_user` ni `api_key`. **Enforcement pendiente**: no existe trigger en `tenant_usage.user_count` ni validación en app (ver BaseDatos)
+- `max_storage_bytes` limita el almacenamiento total del tenant: enforcement vía `StorageQuotaService` (ADR-0013), HTTP 409 al exceder, contador `tenant_usage.storage_bytes_used` con `UPDATE` atómico en la misma TX
 - Los audit_log son insert-only
 
 ## Pendientes
@@ -54,6 +57,7 @@ El diseño de los servicios se infiere de las entidades y la funcionalidad esper
 - [x] Implementar `TenantService.create` (organización + aprovisionamiento de schema + API key inicial)
 - [x] Implementar `TenantLifecycleService` (cancel/suspend/reinstate con validación de transiciones)
 - [ ] Implementar enforcement de `max_users` (trigger `tenant_usage.user_count` o validación en app)
+- [x] Implementar enforcement de `max_storage_bytes` (ADR-0013, contador `tenant_usage.storage_bytes_used`)
 - [ ] Implementar resto de servicios del schema público
 - [x] Implementar `DocumentService` del schema de tenant (`create`/`addVersion`/`get`); pendientes folder y permissions
 - [ ] Implementar servicio de almacenamiento S3/MinIO (pendiente de ADR de storage)
