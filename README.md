@@ -70,7 +70,7 @@ The system is built with a strong emphasis on security (WORM audit logs, API key
 - **S3-compatible storage** — Backblaze B2 integration with streaming uploads and constant memory usage
 - **Tenant lifecycle management** — cancel, suspend, and reinstate with cascading effects on subscriptions, keys, and members
 - **Redis caching** — API key hashes (5 min TTL) and JWKS keys (10 min TTL) with Jackson 3 serialization
-- **Plan-based quotas** — FREE, PRO, BUSINESS, ENTERPRISE tiers with storage, user, and rate limits
+- **Plan-based quotas** — FREE, PRO, BUSINESS, ENTERPRISE tiers with storage, user, and rate limits. Storage quota is enforced at upload time: exceeding the plan's `max_storage_bytes` returns HTTP 409 (ADR-0013)
 - **Soft deletes** — documents and folders use logical deletion with `deleted_at` timestamps
 
 ## Tech Stack
@@ -257,6 +257,17 @@ All endpoints are prefixed with `/api/v1`. Only `POST /tenants` is public; all o
 | `POST` | `/documents/{documentId}/versions` | Upload new immutable version | API Key / JWT |
 | `GET` | `/documents/{documentId}` | Get document with current version | API Key / JWT |
 
+Document upload responses:
+
+| Status | Meaning |
+|---|---|
+| `201` | Created (document/version) |
+| `400` | Empty/missing file, invalid body, missing `ownerUserId` with SERVICE key |
+| `404` | Document not found or soft-deleted (versions endpoint) |
+| `409` | Plan storage quota exceeded (`tenant_usage.storage_bytes_used` vs `plan.max_storage_bytes`) |
+| `413` | File exceeds `UPLOAD_MAX_SIZE_BYTES` (per-file limit) |
+| `415` | MIME type not in `UPLOAD_ALLOWED_MIME_TYPES` allowlist |
+
 ### Authentication
 
 API keys are passed via `Authorization: Bearer mv_live_...` or `X-API-Key` header.
@@ -358,7 +369,7 @@ Full project documentation is available in the [`docs/`](docs/INDEX.md) director
 - [Security Considerations](docs/01-Arquitectura/Seguridad.md)
 - [API Reference](docs/02-Backend/API.md)
 - [Database Schema](docs/02-Backend/BaseDatos.md)
-- [Architecture Decision Records](docs/06-Decisiones/) — 12 ADRs documenting key technical decisions
+- [Architecture Decision Records](docs/06-Decisiones/) — 13 ADRs documenting key technical decisions
 
 ## License
 
