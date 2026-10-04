@@ -2,6 +2,7 @@ package dev.achiri.multivault.infrastructure.security.jwt;
 
 import dev.achiri.multivault.infrastructure.security.apikey.ApiKeyAuthenticationFilter;
 import dev.achiri.multivault.infrastructure.security.apikey.ApiKeyIdentity;
+import dev.achiri.multivault.infrastructure.security.apikey.Scopes;
 import dev.achiri.multivault.infrastructure.security.jwt.exception.InvalidJwtException;
 import dev.achiri.multivault.infrastructure.security.jwt.model.TenantUserPrincipal;
 import dev.achiri.multivault.infrastructure.security.jwt.model.ValidatedJwt;
@@ -21,8 +22,8 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
-import java.util.ArrayList;
 import java.util.List;
+import java.util.stream.Stream;
 
 @Component
 @RequiredArgsConstructor
@@ -52,12 +53,16 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             return;
         }
 
+        ApiKeyIdentity standardKey =
+                (ApiKeyIdentity) request.getAttribute(ApiKeyAuthenticationFilter.STANDARD_API_KEY_ATTR);
+        if (standardKey == null) {
+            filterChain.doFilter(request, response);
+            return;
+        }
+
         try {
             ValidatedJwt validated = jwtDecoder.authenticate(token);
-
-            ApiKeyIdentity standardKey =
-                    (ApiKeyIdentity) request.getAttribute(ApiKeyAuthenticationFilter.STANDARD_API_KEY_ATTR);
-            if (standardKey == null || !standardKey.tenantId().equals(validated.tenantId())) {
+            if (!standardKey.tenantId().equals(validated.tenantId())) {
                 filterChain.doFilter(request, response);
                 return;
             }
@@ -65,14 +70,12 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             TenantMember member = tenantMemberService.upsert(
                     validated.tenantId(), validated.subject(), validated.email(), validated.displayName());
 
-            List<SimpleGrantedAuthority> authorities = new ArrayList<>();
-            if (standardKey != null) {
-                standardKey.scopes().stream()
-                        .flatMap(scope -> dev.achiri.multivault.infrastructure.security.apikey.Scopes.WILDCARD.equals(scope)
-                                ? dev.achiri.multivault.infrastructure.security.apikey.Scopes.all().stream()
-                                : java.util.stream.Stream.of(scope))
-                        .forEach(scope -> authorities.add(new SimpleGrantedAuthority("SCOPE_" + scope)));
-            }
+            List<SimpleGrantedAuthority> authorities = standardKey.scopes().stream()
+                    .flatMap(scope -> Scopes.WILDCARD.equals(scope)
+                            ? Scopes.all().stream()
+                            : Stream.of(scope))
+                    .map(scope -> new SimpleGrantedAuthority("SCOPE_" + scope))
+                    .toList();
 
             TenantUserPrincipal principal =
                     new TenantUserPrincipal(member.getId(), member.getTenantId(), member.getSubject());

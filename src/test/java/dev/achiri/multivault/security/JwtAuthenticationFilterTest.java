@@ -3,6 +3,7 @@ package dev.achiri.multivault.security;
 import dev.achiri.multivault.apikey.model.ApiKeyType;
 import dev.achiri.multivault.infrastructure.security.apikey.ApiKeyAuthenticationFilter;
 import dev.achiri.multivault.infrastructure.security.apikey.ApiKeyIdentity;
+import dev.achiri.multivault.infrastructure.security.apikey.ApiKeyPrincipal;
 import dev.achiri.multivault.infrastructure.security.jwt.JwtAuthenticationFilter;
 import dev.achiri.multivault.infrastructure.security.jwt.MultiIssuerJwtDecoder;
 import dev.achiri.multivault.infrastructure.security.jwt.exception.InvalidJwtException;
@@ -59,10 +60,7 @@ class JwtAuthenticationFilterTest {
     @Test
     void setsStandardKeyScopesAsAuthorities() throws Exception {
         MockHttpServletRequest request = bearerRequest("some.jwt.token");
-        ApiKeyIdentity standardKey = new ApiKeyIdentity(
-                UUID.randomUUID(), TENANT_ID, "standard", ApiKeyType.STANDARD,
-                List.of("documents:read", "documents:write"), 0);
-        request.setAttribute(ApiKeyAuthenticationFilter.STANDARD_API_KEY_ATTR, standardKey);
+        request.setAttribute(ApiKeyAuthenticationFilter.STANDARD_API_KEY_ATTR, standardKey(TENANT_ID));
         FilterChain chain = mock(FilterChain.class);
         when(jwtDecoder.authenticate("some.jwt.token"))
                 .thenReturn(new ValidatedJwt(TENANT_ID, "user-1", "user@test.com", "User One"));
@@ -93,19 +91,39 @@ class JwtAuthenticationFilterTest {
     void doesNotAuthenticateJwtWithoutStandardKey() throws Exception {
         MockHttpServletRequest request = bearerRequest("some.jwt.token");
         FilterChain chain = mock(FilterChain.class);
-        when(jwtDecoder.authenticate("some.jwt.token"))
-                .thenReturn(new ValidatedJwt(TENANT_ID, "user-1", "user@test.com", "User One"));
 
         filter.doFilter(request, new MockHttpServletResponse(), chain);
 
         assertThat(SecurityContextHolder.getContext().getAuthentication()).isNull();
+        verify(jwtDecoder, never()).authenticate(anyString());
         verify(tenantMemberService, never()).upsert(any(), any(), any(), any());
+        verify(chain).doFilter(any(), any());
+    }
+
+    @Test
+    void skipsDecodingWhenServiceKeyAlreadyAuthenticated() throws Exception {
+        UsernamePasswordAuthenticationToken serviceAuthentication =
+                new UsernamePasswordAuthenticationToken(
+                        new ApiKeyPrincipal(UUID.randomUUID(), TENANT_ID, "service", ApiKeyType.SERVICE),
+                        null,
+                        List.of());
+        SecurityContextHolder.getContext().setAuthentication(serviceAuthentication);
+        MockHttpServletRequest request = bearerRequest("some.jwt.token");
+        request.addHeader("X-API-Key", "mv_live_abcdef1234567890abcdef1234567890abcdef12345678");
+        FilterChain chain = mock(FilterChain.class);
+
+        filter.doFilter(request, new MockHttpServletResponse(), chain);
+
+        verify(jwtDecoder, never()).authenticate(anyString());
+        verify(tenantMemberService, never()).upsert(any(), any(), any(), any());
+        assertThat(SecurityContextHolder.getContext().getAuthentication()).isSameAs(serviceAuthentication);
         verify(chain).doFilter(any(), any());
     }
 
     @Test
     void clearsContextOnInvalidJwt() throws Exception {
         MockHttpServletRequest request = bearerRequest("bad.token");
+        request.setAttribute(ApiKeyAuthenticationFilter.STANDARD_API_KEY_ATTR, standardKey(TENANT_ID));
         FilterChain chain = mock(FilterChain.class);
         when(jwtDecoder.authenticate("bad.token")).thenThrow(new InvalidJwtException("JWT inválido"));
 
@@ -145,9 +163,7 @@ class JwtAuthenticationFilterTest {
     @Test
     void skipsAuthenticationWhenStandardKeyAndJwtTenantsDiffer() throws Exception {
         MockHttpServletRequest request = bearerRequest("some.jwt.token");
-        ApiKeyIdentity standardKey = new ApiKeyIdentity(
-                UUID.randomUUID(), UUID.randomUUID(), "standard", ApiKeyType.STANDARD, List.of(), 0);
-        request.setAttribute(ApiKeyAuthenticationFilter.STANDARD_API_KEY_ATTR, standardKey);
+        request.setAttribute(ApiKeyAuthenticationFilter.STANDARD_API_KEY_ATTR, standardKey(UUID.randomUUID()));
         FilterChain chain = mock(FilterChain.class);
         when(jwtDecoder.authenticate("some.jwt.token"))
                 .thenReturn(new ValidatedJwt(TENANT_ID, "user-1", "user@test.com", "User One"));
@@ -163,5 +179,11 @@ class JwtAuthenticationFilterTest {
         MockHttpServletRequest request = new MockHttpServletRequest();
         request.addHeader("Authorization", "Bearer " + token);
         return request;
+    }
+
+    private ApiKeyIdentity standardKey(UUID tenantId) {
+        return new ApiKeyIdentity(
+                UUID.randomUUID(), tenantId, "standard", ApiKeyType.STANDARD,
+                List.of("documents:read", "documents:write"), 0);
     }
 }

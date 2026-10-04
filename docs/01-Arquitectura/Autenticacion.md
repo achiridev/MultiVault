@@ -38,6 +38,7 @@ CREATE TABLE tenant_identity_provider (
 `infrastructure/security/jwt/JwtAuthenticationFilter` (`OncePerRequestFilter`, registrado después del filtro de API key y antes de `UsernamePasswordAuthenticationFilter`):
 
 - Solo procesa tokens `Authorization: Bearer` que **no** empiecen con `mv_live_` (esos son API keys). Si el request ya está autenticado (key SERVICE), no hace nada.
+- Resuelve **primero** la key STANDARD del request (`STANDARD_API_KEY_ATTR`, expuesta por `ApiKeyAuthenticationFilter`, que corre antes). Sin key STANDARD el token **no se decodifica**: el filtro pasa la cadena sin tocar el JWT (queda sin autenticar → `401`), evitando resolver el provider, descargar/cachear el JWKS y verificar la firma de un token que se iba a descartar. El JWT de tenant nunca viaja solo (ADR-0011); un futuro JWT de platform_user tendrá otro issuer y será autenticado por su propio `PlatformUserAuthenticationProvider`.
 - `MultiIssuerJwtDecoder.authenticate`:
   1. Lee los claims `iss` y el header `kid`/`alg`.
   2. Busca el provider por issuer (`findByIssuerAndIsActiveTrue`); sin fila → JWT inválido.
@@ -47,9 +48,8 @@ CREATE TABLE tenant_identity_provider (
      - El token **no** trae `kid` → solo se acepta si el JWKS tiene exactamente una clave RSA; si hay varias, el token es ambiguo y se rechaza.
   5. Verifica la firma con `Jwts.parser().verifyWith(publicKey)`. Si falla la firma **o el `kid` no aparece en el JWKS** (`UnknownKeyException`), se hace `evict` del JWKS cacheado y se reintenta una vez (soporta key rotation del IdP con caché stale). Agotado el reintento → JWT inválido.
   6. Valida `aud` contra el audience configurado y la expiración (con `clock_skew_seconds` del provider).
-- JWT válido → si no hay key STANDARD en el request (`STANDARD_API_KEY_ATTR`) → **no autentica** (401): el JWT de tenant nunca viaja solo (ADR-0011). Un futuro JWT de platform_user tendrá otro issuer y será autenticado por su propio `PlatformUserAuthenticationProvider`.
 - JWT válido + key STANDARD del **mismo tenant** → upsert de `tenant_member` (`TenantMemberService.upsert`: crea o actualiza `display_name`, `email`, `last_seen_at`) y autentica con principal `TenantUserPrincipal(memberId, tenantId, subject)`; authorities = scopes de la key (`SCOPE_<scope>`). Si los tenants difieren → no autentica.
-- JWT inválido → `SecurityContextHolder.clearContext()` → `401` (`RestAuthenticationEntryPoint` con `ErrorResponse` JSON).
+- JWT inválido (con key STANDARD presente) → `SecurityContextHolder.clearContext()` → `401` (`RestAuthenticationEntryPoint` con `ErrorResponse` JSON).
 
 ### Mecanismo 2: API Keys (api_key)
 
