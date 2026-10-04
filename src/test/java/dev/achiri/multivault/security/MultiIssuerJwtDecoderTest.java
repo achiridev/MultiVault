@@ -42,6 +42,7 @@ class MultiIssuerJwtDecoderTest {
     private static final String JWKS_URI = "https://idp.test/jwks";
     private static final String SUBJECT = "user-1";
     private static final String KEY_ID = "test-key";
+    private static final String ROTATED_KEY_ID = "rotated-key";
 
     private static final KeyPair KEY_PAIR = rsaKeyPair();
     private static final KeyPair OTHER_KEY_PAIR = rsaKeyPair();
@@ -106,8 +107,38 @@ class MultiIssuerJwtDecoderTest {
     }
 
     @Test
-    void fallsBackToFirstKeyWhenKidUnknown() {
+    void rejectsJwtWhenKidUnknownAfterRefetch() {
         String token = jwt("unknown-kid", KEY_PAIR, ISSUER);
+        when(identityProviderRepository.findByIssuerAndIsActiveTrue(ISSUER)).thenReturn(Optional.of(provider));
+        when(jwksProvider.fetch(JWKS_URI)).thenReturn(jwkList(KEY_ID, KEY_PAIR));
+
+        assertThatThrownBy(() -> decoder.authenticate(token))
+                .isInstanceOf(InvalidJwtException.class)
+                .hasMessageContaining("kid no encontrado en JWKS");
+
+        verify(jwksProvider).evict(JWKS_URI);
+    }
+
+    @Test
+    void acceptsJwtWithUnknownKidWhenJwksRefreshedWithRotatedKey() {
+        String token = jwt(ROTATED_KEY_ID, OTHER_KEY_PAIR, ISSUER);
+        when(identityProviderRepository.findByIssuerAndIsActiveTrue(ISSUER)).thenReturn(Optional.of(provider));
+        when(jwksProvider.fetch(JWKS_URI))
+                .thenReturn(jwkList(KEY_ID, KEY_PAIR))
+                .thenReturn(jwkList(ROTATED_KEY_ID, OTHER_KEY_PAIR));
+
+        ValidatedJwt validated = decoder.authenticate(token);
+
+        assertThat(validated.tenantId()).isEqualTo(provider.getTenantId());
+        assertThat(validated.subject()).isEqualTo(SUBJECT);
+        assertThat(validated.email()).isEqualTo(SUBJECT + "@test.com");
+
+        verify(jwksProvider).evict(JWKS_URI);
+    }
+
+    @Test
+    void resolvesJwtWithoutKidWhenJwksHasSingleRsaKey() {
+        String token = jwtWithoutKid(KEY_PAIR, ISSUER);
         when(identityProviderRepository.findByIssuerAndIsActiveTrue(ISSUER)).thenReturn(Optional.of(provider));
         when(jwksProvider.fetch(JWKS_URI)).thenReturn(jwkList(KEY_ID, KEY_PAIR));
 
@@ -115,7 +146,18 @@ class MultiIssuerJwtDecoderTest {
 
         assertThat(validated.tenantId()).isEqualTo(provider.getTenantId());
         assertThat(validated.subject()).isEqualTo(SUBJECT);
-        assertThat(validated.email()).isEqualTo(SUBJECT + "@test.com");
+    }
+
+    @Test
+    void rejectsJwtWithoutKidWhenJwksHasMultipleRsaKeys() {
+        String token = jwtWithoutKid(KEY_PAIR, ISSUER);
+        when(identityProviderRepository.findByIssuerAndIsActiveTrue(ISSUER)).thenReturn(Optional.of(provider));
+        when(jwksProvider.fetch(JWKS_URI))
+                .thenReturn(jwkList(KEY_ID, KEY_PAIR, OTHER_KEY_PAIR));
+
+        assertThatThrownBy(() -> decoder.authenticate(token))
+                .isInstanceOf(InvalidJwtException.class)
+                .hasMessageContaining("token sin kid y JWKS ambiguo");
     }
 
     @Test
@@ -146,10 +188,30 @@ class MultiIssuerJwtDecoderTest {
                 .compact();
     }
 
+    private String jwtWithoutKid(KeyPair keyPair, String issuer) {
+        return Jwts.builder()
+                .serializeToJsonWith(serializer)
+                .issuer(issuer)
+                .subject(SUBJECT)
+                .setAudience(AUDIENCE)
+                .expiration(Date.from(Instant.now().plusSeconds(300)))
+                .claim("email", SUBJECT + "@test.com")
+                .claim("name", "User One")
+                .signWith(keyPair.getPrivate(), Jwts.SIG.RS256)
+                .compact();
+    }
+
     private List<JwkEntry> jwkList(String kid, KeyPair keyPair) {
+        return List.of(jwk(kid, keyPair));
+    }
+
+    private List<JwkEntry> jwkList(String kid, KeyPair keyPair, KeyPair otherKeyPair) {
+        return List.of(jwk(kid, keyPair), jwk("second-" + kid, otherKeyPair));
+    }
+
+    private JwkEntry jwk(String kid, KeyPair keyPair) {
         RSAPublicKey rsa = (RSAPublicKey) keyPair.getPublic();
-        return List.of(new JwkEntry(
-                kid, "RSA", "RS256", base64Url(rsa.getModulus()), base64Url(rsa.getPublicExponent())));
+        return new JwkEntry(kid, "RSA", "RS256", base64Url(rsa.getModulus()), base64Url(rsa.getPublicExponent()));
     }
 
     private String base64Url(BigInteger value) {

@@ -42,8 +42,10 @@ CREATE TABLE tenant_identity_provider (
   1. Lee los claims `iss` y el header `kid`/`alg`.
   2. Busca el provider por issuer (`findByIssuerAndIsActiveTrue`); sin fila → JWT inválido.
   3. Valida `alg` contra `allowed_algorithms` del provider.
-  4. Obtiene el JWKS del issuer (`JwksProvider`, cacheado 10 min en Redis) y arma la clave RSA desde `n`/`e` del JWK.
-  5. Verifica la firma con `Jwts.parser().verifyWith(publicKey)`. Si la firma falla, se hace `evict` del JWKS cacheado y se reintenta una vez (soporta key rotation del IdP).
+  4. Obtiene el JWKS del issuer (`JwksProvider`, cacheado 10 min en Redis) y resuelve la clave RSA desde `n`/`e` del JWK:
+     - El token trae `kid` → match exacto obligatorio en el JWKS. No hay fallback a otra clave (ADR-0014).
+     - El token **no** trae `kid` → solo se acepta si el JWKS tiene exactamente una clave RSA; si hay varias, el token es ambiguo y se rechaza.
+  5. Verifica la firma con `Jwts.parser().verifyWith(publicKey)`. Si falla la firma **o el `kid` no aparece en el JWKS** (`UnknownKeyException`), se hace `evict` del JWKS cacheado y se reintenta una vez (soporta key rotation del IdP con caché stale). Agotado el reintento → JWT inválido.
   6. Valida `aud` contra el audience configurado y la expiración (con `clock_skew_seconds` del provider).
 - JWT válido → si no hay key STANDARD en el request (`STANDARD_API_KEY_ATTR`) → **no autentica** (401): el JWT de tenant nunca viaja solo (ADR-0011). Un futuro JWT de platform_user tendrá otro issuer y será autenticado por su propio `PlatformUserAuthenticationProvider`.
 - JWT válido + key STANDARD del **mismo tenant** → upsert de `tenant_member` (`TenantMemberService.upsert`: crea o actualiza `display_name`, `email`, `last_seen_at`) y autentica con principal `TenantUserPrincipal(memberId, tenantId, subject)`; authorities = scopes de la key (`SCOPE_<scope>`). Si los tenants difieren → no autentica.

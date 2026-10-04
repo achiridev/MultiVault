@@ -63,6 +63,7 @@ Punto de entrada único. Lee este archivo primero, luego los documentos relevant
 | [ADR-0011](06-Decisiones/ADR-0011.md) | El JWT de tenant exige API key; autorización por scopes |
 | [ADR-0012](06-Decisiones/ADR-0012.md) | API key inicial SERVICE como llave maestra; tenant derivado del principal |
 | [ADR-0013](06-Decisiones/ADR-0013.md) | Enforcement de cuota de almacenamiento por plan (`max_storage_bytes`) |
+| [ADR-0014](06-Decisiones/ADR-0014.md) | Resolución estricta de clave JWKS por `kid` (sin fallback a la primera clave) |
 
 ## 99-Templates
 

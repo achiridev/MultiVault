@@ -2,6 +2,7 @@ package dev.achiri.multivault.infrastructure.security.jwt;
 
 import dev.achiri.multivault.infrastructure.security.codec.JwtJackson3Deserializer;
 import dev.achiri.multivault.infrastructure.security.jwt.exception.InvalidJwtException;
+import dev.achiri.multivault.infrastructure.security.jwt.exception.UnknownKeyException;
 import dev.achiri.multivault.infrastructure.security.jwt.jwks.JwkEntry;
 import dev.achiri.multivault.infrastructure.security.jwt.jwks.JwksProvider;
 import dev.achiri.multivault.infrastructure.security.jwt.model.ValidatedJwt;
@@ -11,7 +12,7 @@ import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.Jws;
 import io.jsonwebtoken.JwtException;
 import io.jsonwebtoken.Jwts;
-import io.jsonwebtoken.security.SignatureException;
+import io.jsonwebtoken.SignatureException;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 import tools.jackson.core.JacksonException;
@@ -68,10 +69,12 @@ public class MultiIssuerJwtDecoder {
     private Claims verifyWithRetry(String token, TenantIdentityProvider provider, String headerAlgorithm, String keyId) {
         try {
             return verify(token, provider, headerAlgorithm, keyId);
-        } catch (SignatureException e) {
+        } catch (UnknownKeyException | SignatureException e) {
             jwksProvider.evict(provider.getJwksUri());
             try {
                 return verify(token, provider, headerAlgorithm, keyId);
+            } catch (UnknownKeyException retry) {
+                throw retry;
             } catch (JwtException | IllegalArgumentException retry) {
                 throw new InvalidJwtException("JWT inválido", retry);
             }
@@ -91,12 +94,14 @@ public class MultiIssuerJwtDecoder {
 
     private PublicKey resolvePublicKey(List<JwkEntry> entries, String keyId) {
         if (entries.isEmpty()) {
-            throw new InvalidJwtException("JWKS sin claves");
+            throw new UnknownKeyException("JWKS sin claves");
         }
-        JwkEntry entry = entries.stream()
-                .filter(e -> e.kid().equals(keyId))
-                .findFirst()
-                .orElse(entries.get(0));
+        JwkEntry entry = keyId.isEmpty()
+                ? singleRsaEntry(entries)
+                : entries.stream()
+                        .filter(e -> keyId.equals(e.kid()))
+                        .findFirst()
+                        .orElseThrow(() -> new UnknownKeyException("kid no encontrado en JWKS: " + keyId));
         if (!"RSA".equals(entry.kty())) {
             throw new InvalidJwtException("kty no soportado: " + entry.kty());
         }
@@ -108,6 +113,14 @@ public class MultiIssuerJwtDecoder {
         } catch (IllegalArgumentException | NoSuchAlgorithmException | InvalidKeySpecException e) {
             throw new InvalidJwtException("clave JWKS inválida", e);
         }
+    }
+
+    private JwkEntry singleRsaEntry(List<JwkEntry> entries) {
+        List<JwkEntry> rsaEntries = entries.stream().filter(e -> "RSA".equals(e.kty())).toList();
+        if (rsaEntries.size() != 1) {
+            throw new InvalidJwtException("token sin kid y JWKS ambiguo: " + rsaEntries.size() + " claves RSA");
+        }
+        return rsaEntries.get(0);
     }
 
     private String readHeaderAlgorithm(String token) {
