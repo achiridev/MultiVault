@@ -3,6 +3,7 @@ package dev.achiri.multivault.infrastructure.security.apikey;
 import dev.achiri.multivault.apikey.model.ApiKeyType;
 import dev.achiri.multivault.apikey.service.ApiKeyHasher;
 import dev.achiri.multivault.apikey.service.ApiKeyUsageRecorder;
+import dev.achiri.multivault.infrastructure.security.ScopeAuthorities;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -58,12 +59,7 @@ public class ApiKeyAuthenticationFilter extends OncePerRequestFilter {
         apiKeyUsageRecorder.recordUsage(key.keyId());
 
         ApiKeyPrincipal principal = new ApiKeyPrincipal(key.keyId(), key.tenantId(), key.name(), key.keyType());
-        List<SimpleGrantedAuthority> authorities = key.scopes().stream()
-                .flatMap(scope -> Scopes.WILDCARD.equals(scope)
-                        ? Scopes.all().stream()
-                        : java.util.stream.Stream.of(scope))
-                .map(scope -> new SimpleGrantedAuthority("SCOPE_" + scope))
-                .toList();
+        List<SimpleGrantedAuthority> authorities = ScopeAuthorities.from(key.scopes());
 
         UsernamePasswordAuthenticationToken authentication =
                 new UsernamePasswordAuthenticationToken(principal, null, authorities);

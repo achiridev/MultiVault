@@ -6,7 +6,7 @@ import dev.achiri.multivault.apikey.repository.ApiKeyRepository;
 import dev.achiri.multivault.apikey.service.ApiKeyHasher;
 import dev.achiri.multivault.apikey.service.ApiKeyResult;
 import dev.achiri.multivault.apikey.service.ApiKeyService;
-import dev.achiri.multivault.infrastructure.security.apikey.Scopes;
+import dev.achiri.multivault.infrastructure.security.Scopes;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;

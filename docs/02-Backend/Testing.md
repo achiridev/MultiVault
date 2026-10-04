@@ -22,7 +22,8 @@ Tests de integración con **Testcontainers + PostgreSQL real** (postgres:16-alpi
 | `ApiKeyServiceTest` | Unitario | Generación de api key (raw mostrada una vez, solo hash almacenado) |
 | `ApiKeyAuthenticatorTest` | Unitario | Resolución de api key por hash: mapeo a `ApiKeyIdentity` (expiración → epoch, null → 0), no encontrada → null |
 | `ApiKeyFilterIntegrationTest` | Integración | Autenticación por API key: `SERVICE` autentica (Bearer y `X-API-Key`), `STANDARD` sin JWT/revocada/expirada/desconocida/JWT-like → 401, cuerpo 401 como `ErrorResponse`, prioridad de `SERVICE` sobre JWT |
-| `JwtAuthenticationFilterTest` | Unitario | Filtro JWT: scopes de key `STANDARD` → authorities `SCOPE_*`, JWT inválido limpia el contexto, token `mv_live_` y auth previa saltan el decode, tenants distintos STANDARD/JWT → sin autenticar |
+| `JwtAuthenticationFilterTest` | Unitario | Filtro JWT: scopes de key `STANDARD` → authorities `SCOPE_*`, scope `*` expandido al catálogo completo, JWT inválido limpia el contexto, token `mv_live_` y auth previa saltan el decode (sin key STANDARD ni con key SERVICE tampoco se decodifica), tenants distintos STANDARD/JWT → sin autenticar |
+| `ScopeAuthoritiesTest` | Unitario | Mapeo scopes → authorities: `*` expandido a todo el catálogo, scopes explícitos en orden, lista vacía, deduplicación (wildcard + scope explícito, scope repetido) |
 | `JwksProviderTest` | Unitario | Fetch JWKS contra `HttpServer` del JDK: parseo OK, HTTP ≠ 200, JSON inválido, sin campo `keys` → `IllegalStateException` |
 | `MultiIssuerJwtDecoderTest` | Unitario | Decoder: issuer no configurado, JWKS vacío, kty no RSA, kid desconocido → evict + reintento → 401 (ADR-0014), kid desconocido resuelto tras refetch con clave rotada, sin `kid` + 1 clave RSA → válido, sin `kid` + varias claves RSA → ambiguo, firma errónea → evict + reintento |
 | `RestAuthenticationEntryPointTest` | Unitario | 401 como `ErrorResponse` JSON (`status`/`mensaje`) |

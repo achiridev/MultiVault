@@ -1,8 +1,8 @@
 package dev.achiri.multivault.infrastructure.security.jwt;
 
+import dev.achiri.multivault.infrastructure.security.ScopeAuthorities;
 import dev.achiri.multivault.infrastructure.security.apikey.ApiKeyAuthenticationFilter;
 import dev.achiri.multivault.infrastructure.security.apikey.ApiKeyIdentity;
-import dev.achiri.multivault.infrastructure.security.apikey.Scopes;
 import dev.achiri.multivault.infrastructure.security.jwt.exception.InvalidJwtException;
 import dev.achiri.multivault.infrastructure.security.jwt.model.TenantUserPrincipal;
 import dev.achiri.multivault.infrastructure.security.jwt.model.ValidatedJwt;
@@ -23,7 +23,6 @@ import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
 import java.util.List;
-import java.util.stream.Stream;
 
 @Component
 @RequiredArgsConstructor
@@ -70,12 +69,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             TenantMember member = tenantMemberService.upsert(
                     validated.tenantId(), validated.subject(), validated.email(), validated.displayName());
 
-            List<SimpleGrantedAuthority> authorities = standardKey.scopes().stream()
-                    .flatMap(scope -> Scopes.WILDCARD.equals(scope)
-                            ? Scopes.all().stream()
-                            : Stream.of(scope))
-                    .map(scope -> new SimpleGrantedAuthority("SCOPE_" + scope))
-                    .toList();
+            List<SimpleGrantedAuthority> authorities = ScopeAuthorities.from(standardKey.scopes());
 
             TenantUserPrincipal principal =
                     new TenantUserPrincipal(member.getId(), member.getTenantId(), member.getSubject());

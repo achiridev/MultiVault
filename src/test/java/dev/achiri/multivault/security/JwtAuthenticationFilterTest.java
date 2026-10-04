@@ -1,6 +1,7 @@
 package dev.achiri.multivault.security;
 
 import dev.achiri.multivault.apikey.model.ApiKeyType;
+import dev.achiri.multivault.infrastructure.security.Scopes;
 import dev.achiri.multivault.infrastructure.security.apikey.ApiKeyAuthenticationFilter;
 import dev.achiri.multivault.infrastructure.security.apikey.ApiKeyIdentity;
 import dev.achiri.multivault.infrastructure.security.apikey.ApiKeyPrincipal;
@@ -84,6 +85,30 @@ class JwtAuthenticationFilterTest {
                     assertThat(userPrincipal.tenantId()).isEqualTo(TENANT_ID);
                     assertThat(userPrincipal.subject()).isEqualTo("user-1");
                 });
+        verify(chain).doFilter(any(), any());
+    }
+
+    @Test
+    void expandsWildcardScopeOfStandardKey() throws Exception {
+        MockHttpServletRequest request = bearerRequest("some.jwt.token");
+        request.setAttribute(ApiKeyAuthenticationFilter.STANDARD_API_KEY_ATTR, standardKey(TENANT_ID, List.of(Scopes.WILDCARD)));
+        FilterChain chain = mock(FilterChain.class);
+        when(jwtDecoder.authenticate("some.jwt.token"))
+                .thenReturn(new ValidatedJwt(TENANT_ID, "user-1", "user@test.com", "User One"));
+        TenantMember member = new TenantMember();
+        member.setId(UUID.randomUUID());
+        member.setTenantId(TENANT_ID);
+        member.setSubject("user-1");
+        when(tenantMemberService.upsert(TENANT_ID, "user-1", "user@test.com", "User One")).thenReturn(member);
+
+        filter.doFilter(request, new MockHttpServletResponse(), chain);
+
+        UsernamePasswordAuthenticationToken authentication =
+                (UsernamePasswordAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
+        assertThat(authentication).isNotNull();
+        assertThat(authentication.getAuthorities()).extracting(authority -> authority.getAuthority())
+                .containsExactlyElementsOf(
+                        Scopes.all().stream().map(scope -> "SCOPE_" + scope).toList());
         verify(chain).doFilter(any(), any());
     }
 
@@ -182,8 +207,10 @@ class JwtAuthenticationFilterTest {
     }
 
     private ApiKeyIdentity standardKey(UUID tenantId) {
-        return new ApiKeyIdentity(
-                UUID.randomUUID(), tenantId, "standard", ApiKeyType.STANDARD,
-                List.of("documents:read", "documents:write"), 0);
+        return standardKey(tenantId, List.of("documents:read", "documents:write"));
+    }
+
+    private ApiKeyIdentity standardKey(UUID tenantId, List<String> scopes) {
+        return new ApiKeyIdentity(UUID.randomUUID(), tenantId, "standard", ApiKeyType.STANDARD, scopes, 0);
     }
 }

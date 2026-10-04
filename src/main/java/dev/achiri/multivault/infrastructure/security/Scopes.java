@@ -1,4 +1,4 @@
-package dev.achiri.multivault.infrastructure.security.apikey;
+package dev.achiri.multivault.infrastructure.security;
 
 import java.util.List;
 

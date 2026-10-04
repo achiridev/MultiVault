@@ -3,7 +3,7 @@ package dev.achiri.multivault.apikey.service;
 import dev.achiri.multivault.apikey.model.ApiKey;
 import dev.achiri.multivault.apikey.model.ApiKeyType;
 import dev.achiri.multivault.apikey.repository.ApiKeyRepository;
-import dev.achiri.multivault.infrastructure.security.apikey.Scopes;
+import dev.achiri.multivault.infrastructure.security.Scopes;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;

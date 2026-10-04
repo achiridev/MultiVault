@@ -76,7 +76,7 @@ CREATE TABLE api_key (
 - **STANDARD:** Uso normal; exige JWT del mismo tenant junto a la key, y el JWT a su vez exige la key (ADR-0011). Ningún request entra solo con JWT
 - Solo se almacena el hash; la key raw se muestra una única vez al crearla
 - Índice único parcial sobre `key_hash WHERE revoked_at IS NULL`
-- Al crear un tenant, el onboarding genera automáticamente la **API key inicial del admin** (`ApiKeyService.createInitial`): raw `mv_live_` + 40 hex, `key_prefix` = primeros 12 chars, hash SHA-256, `key_type = SERVICE`, `scopes = ['*']` (llave maestra, expande al catálogo completo de scopes, ADR-0012), `created_by_user_id = tenant_member.id` del admin. La raw se devuelve una sola vez en la respuesta de `POST /api/v1/tenants`. El scope `*` se expande en `ApiKeyAuthenticationFilter` (y en la combinación STANDARD+JWT) a `Scopes.all()` → authorities reales `SCOPE_<scope>`.
+- Al crear un tenant, el onboarding genera automáticamente la **API key inicial del admin** (`ApiKeyService.createInitial`): raw `mv_live_` + 40 hex, `key_prefix` = primeros 12 chars, hash SHA-256, `key_type = SERVICE`, `scopes = ['*']` (llave maestra, expande al catálogo completo de scopes, ADR-0012), `created_by_user_id = tenant_member.id` del admin. La raw se devuelve una sola vez en la respuesta de `POST /api/v1/tenants`. El scope `*` se expande por `ScopeAuthorities.from` (común a ambos filtros) a `Scopes.all()` → authorities reales `SCOPE_<scope>`, deduplicadas.
 
 ### Validación de API keys por request (`ApiKeyAuthenticationFilter`)
 
@@ -90,7 +90,7 @@ CREATE TABLE api_key (
 
 ### Autorización por scopes
 
-Los scopes de la key (`api_key.scopes`, TEXT[]) son el mecanismo de autorización por endpoint. Ambos filtros los mapean a authorities `SCOPE_<scope>` en el SecurityContext; `SecurityConfig` activa `@EnableMethodSecurity` y cada controller declara `@PreAuthorize("hasAuthority('SCOPE_...')")`. Sin el scope → `403` (`AccessDeniedException` mapeado a JSON en `GlobalExceptionHandler`). `SecurityConfig` solo resuelve quién entra (`authenticated()`); los scopes se evalúan a nivel de método, no por URL.
+Los scopes de la key (`api_key.scopes`, TEXT[]) son el mecanismo de autorización por endpoint. Ambos filtros los mapean a authorities `SCOPE_<scope>` en el SecurityContext con el helper compartido `infrastructure/security/ScopeAuthorities.from` (expande `*` → `Scopes.all()` y deduplica); `SecurityConfig` activa `@EnableMethodSecurity` y cada controller declara `@PreAuthorize("hasAuthority('SCOPE_...')")`. Sin el scope → `403` (`AccessDeniedException` mapeado a JSON en `GlobalExceptionHandler`). `SecurityConfig` solo resuelve quién entra (`authenticated()`); los scopes se evalúan a nivel de método, no por URL.
 
 Catálogo actual (patrón `recurso:accion`):
 
