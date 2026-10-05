@@ -8,6 +8,7 @@ import dev.achiri.multivault.plan.repository.PlanRepository;
 import dev.achiri.multivault.support.BaseIntegrationTest;
 import dev.achiri.multivault.tenant.dto.CreateTenantRequest;
 import dev.achiri.multivault.tenant.dto.CreateTenantResponse;
+import dev.achiri.multivault.tenant.model.Tenant;
 import dev.achiri.multivault.tenant.repository.TenantRepository;
 import dev.achiri.multivault.tenant.service.TenantService;
 import jakarta.servlet.ServletException;
@@ -106,6 +107,32 @@ class TenantContextFilterTest extends BaseIntegrationTest {
     }
 
     @Test
+    void rejectsRequestsForATenantStillBeingProvisioned() throws ServletException, IOException {
+        CreateTenantResponse created = createTenant("Acme Filter Pending", "sub_filter_pending");
+        TenantUserPrincipal principal =
+                new TenantUserPrincipal(UUID.randomUUID(), created.tenant().id(), "sub_filter_pending");
+        SecurityContextHolder.getContext().setAuthentication(
+                new UsernamePasswordAuthenticationToken(principal, null, List.of()));
+        Tenant tenant = tenantRepository.findById(tenantId).orElseThrow();
+        tenant.setStatus(dev.achiri.multivault.tenant.model.TenantStatus.PENDING_PROVISIONING);
+        tenantRepository.saveAndFlush(tenant);
+
+        MockHttpServletResponse response = new MockHttpServletResponse();
+        AtomicReference<String> schemaDuringRequest = new AtomicReference<>();
+        tenantContextFilter.doFilter(new MockHttpServletRequest(), response,
+                new MockFilterChain() {
+                    @Override
+                    public void doFilter(jakarta.servlet.ServletRequest request, jakarta.servlet.ServletResponse response) {
+                        schemaDuringRequest.set(TenantContext.getSchema());
+                    }
+                });
+
+        assertThat(response.getStatus()).isEqualTo(409);
+        assertThat(response.getHeader("Retry-After")).isEqualTo("2");
+        assertThat(schemaDuringRequest.get()).isNull();
+    }
+
+    @Test
     void leavesContextClearForAnonymousRequest() throws ServletException, IOException {
         AtomicReference<String> schemaDuringRequest = new AtomicReference<>();
         tenantContextFilter.doFilter(new MockHttpServletRequest(), new MockHttpServletResponse(),
@@ -136,6 +163,7 @@ class TenantContextFilterTest extends BaseIntegrationTest {
                         null)));
         tenantId = response.tenant().id();
         schemaName = response.tenant().schemaName();
+        awaitActiveTenant(tenantId);
         return response;
     }
 }

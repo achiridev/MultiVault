@@ -15,22 +15,22 @@ multivault:
         match: ["POST:/api/v1/tenants"]
         scopes: [IP, GLOBAL]
         spec:
-          capacity: 3
-          refill-tokens: 3
+          capacity: 10000
+          refill-tokens: 10000
           refill-period: PT1H
       - id: onboarding-global
         match: ["POST:/api/v1/tenants"]
         scopes: [GLOBAL]
         spec:
-          capacity: 200
-          refill-tokens: 200
+          capacity: 10000
+          refill-tokens: 10000
           refill-period: PT1H
       - id: api-default
         match: ["/api/**"]
         scopes: [IP]
         spec:
-          capacity: 300
-          refill-tokens: 300
+          capacity: 10000
+          refill-tokens: 10000
           refill-period: PT1M
   jwks:
     allow-http: true

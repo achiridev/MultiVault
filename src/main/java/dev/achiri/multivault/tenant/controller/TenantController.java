@@ -29,7 +29,7 @@ public class TenantController {
     @PostMapping
     public ResponseEntity<CreateTenantResponse> create(@Valid @RequestBody CreateTenantRequest request) {
         return ResponseEntity
-                .status(HttpStatus.CREATED)
+                .status(HttpStatus.ACCEPTED)
                 .body(tenantService.create(request));
     }
 

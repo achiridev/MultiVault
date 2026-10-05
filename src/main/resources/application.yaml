@@ -74,6 +74,17 @@ multivault:
           capacity: 300
           refill-tokens: 300
           refill-period: PT1M
+  provisioning:
+    enabled: ${PROVISIONING_ASYNC_ENABLED:true}
+    stream-key: ${PROVISIONING_STREAM_KEY:mv:provisioning:jobs}
+    dead-letter-key: ${PROVISIONING_DLQ_KEY:mv:provisioning:jobs:dlq}
+    consumer-group: ${PROVISIONING_CONSUMER_GROUP:mv-provisioners}
+    consumer-name: ${PROVISIONING_CONSUMER_NAME:worker}
+    max-attempts: ${PROVISIONING_MAX_ATTEMPTS:3}
+    visibility-timeout: ${PROVISIONING_VISIBILITY_TIMEOUT:PT2M}
+    reconcile-interval: ${PROVISIONING_RECONCILE_INTERVAL:PT2M}
+    stale-after: ${PROVISIONING_STALE_AFTER:PT10M}
+    max-stream-length: ${PROVISIONING_MAX_STREAM_LENGTH:10000}
   idempotency:
     enabled: ${IDEMPOTENCY_ENABLED:true}
     key-prefix: ${IDEMPOTENCY_KEY_PREFIX:mv:idem:}

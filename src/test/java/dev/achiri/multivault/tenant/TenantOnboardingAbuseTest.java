@@ -11,6 +11,7 @@ import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
 
 import java.util.Set;
@@ -22,6 +23,15 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 @AutoConfigureMockMvc
+@TestPropertySource(properties = {
+        "multivault.ratelimit.rules[0].id=onboarding",
+        "multivault.ratelimit.rules[0].match[0]=POST:/api/v1/tenants",
+        "multivault.ratelimit.rules[0].scopes[0]=IP",
+        "multivault.ratelimit.rules[0].scopes[1]=GLOBAL",
+        "multivault.ratelimit.rules[0].spec.capacity=3",
+        "multivault.ratelimit.rules[0].spec.refill-tokens=3",
+        "multivault.ratelimit.rules[0].spec.refill-period=PT1H"
+})
 class TenantOnboardingAbuseTest extends BaseIntegrationTest {
 
     private static final String SCHEMA_PREFIX = "mv_";
@@ -75,11 +85,14 @@ class TenantOnboardingAbuseTest extends BaseIntegrationTest {
 
     @Test
     void rejectedRequestsNeverReachSchemaCreation() throws Exception {
+        var ids = new java.util.ArrayList<UUID>();
         for (int attempt = 1; attempt <= 3; attempt++) {
-            mockMvc.perform(post("/api/v1/tenants")
+            var response = mockMvc.perform(post("/api/v1/tenants")
                     .contentType(MediaType.APPLICATION_JSON)
-                    .content(body()));
+                    .content(body())).andReturn().getResponse();
+            ids.add(UUID.fromString(tenantIdOf(response.getContentAsString())));
         }
+        ids.forEach(this::awaitActiveTenant);
 
         int schemasAfterAllowed = schemasCreated();
 
@@ -94,26 +107,41 @@ class TenantOnboardingAbuseTest extends BaseIntegrationTest {
 
     @Test
     void abusiveClientCannotMakeTheApplicationCreateSchemasUnbounded() throws Exception {
+        var ids = new java.util.ArrayList<UUID>();
         for (int attempt = 1; attempt <= 50; attempt++) {
-            mockMvc.perform(post("/api/v1/tenants")
+            var response = mockMvc.perform(post("/api/v1/tenants")
                     .contentType(MediaType.APPLICATION_JSON)
-                    .content(body()));
+                    .content(body())).andReturn().getResponse();
+            if (response.getStatus() < 300) {
+                ids.add(UUID.fromString(tenantIdOf(response.getContentAsString())));
+            }
         }
+        ids.forEach(this::awaitActiveTenant);
 
+        assertThat(ids).hasSize(3);
         assertThat(schemasCreated()).isEqualTo(3);
     }
 
     @Test
     void limitingIsPerClientIpSoRotatingAddressesGetTheirOwnBudget() throws Exception {
+        var ids = new java.util.ArrayList<UUID>();
         for (int attempt = 1; attempt <= 3; attempt++) {
-            mockMvc.perform(post("/api/v1/tenants")
+            var response = mockMvc.perform(post("/api/v1/tenants")
                             .remoteAddress("203.0.113." + attempt)
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(body()))
-                    .andExpect(status().is2xxSuccessful());
+                    .andExpect(status().is2xxSuccessful())
+                    .andReturn().getResponse();
+            ids.add(UUID.fromString(tenantIdOf(response.getContentAsString())));
         }
+        ids.forEach(this::awaitActiveTenant);
 
         assertThat(schemasCreated()).isEqualTo(3);
+    }
+
+    private String tenantIdOf(String body) {
+        int start = body.indexOf("\"tenant\":{\"id\":\"") + "\"tenant\":{\"id\":\"".length();
+        return body.substring(start, body.indexOf('"', start));
     }
 
     @Test

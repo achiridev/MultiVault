@@ -697,6 +697,7 @@ class DocumentFlowIntegrationTest extends BaseIntegrationTest {
                         null)));
         tenantIds.add(response.tenant().id());
         schemaNames.add(response.tenant().schemaName());
+        awaitActiveTenant(response.tenant().id());
         return response;
     }
 
