@@ -31,6 +31,7 @@
 		<org.mapstruct.version>1.6.3</org.mapstruct.version>
 		<testcontainers.version>1.21.3</testcontainers.version>
 		<aws-sdk.version>2.31.25</aws-sdk.version>
+		<bucket4j.version>8.21.0</bucket4j.version>
 	</properties>
 	<dependencies>
 		<dependency>
@@ -138,6 +139,27 @@
 		<dependency>
 			<groupId>org.springframework.boot</groupId>
 			<artifactId>spring-boot-starter-data-redis</artifactId>
+		</dependency>
+
+		<!-- Rate limiting distribuido: token bucket sobre Redis -->
+		<dependency>
+			<groupId>com.bucket4j</groupId>
+			<artifactId>bucket4j_jdk17-core</artifactId>
+			<version>${bucket4j.version}</version>
+		</dependency>
+		<dependency>
+			<groupId>com.bucket4j</groupId>
+			<artifactId>bucket4j_jdk17-redis-common</artifactId>
+			<version>${bucket4j.version}</version>
+		</dependency>
+		<dependency>
+			<groupId>com.bucket4j</groupId>
+			<artifactId>bucket4j_jdk17-lettuce</artifactId>
+			<version>${bucket4j.version}</version>
+		</dependency>
+		<dependency>
+			<groupId>io.micrometer</groupId>
+			<artifactId>micrometer-core</artifactId>
 		</dependency>
 
 	</dependencies>

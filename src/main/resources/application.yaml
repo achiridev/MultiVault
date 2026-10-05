@@ -47,6 +47,33 @@ storage:
     bucket: ${B2_BUCKET:}
 
 multivault:
+  ratelimit:
+    enabled: ${RATELIMIT_ENABLED:true}
+    key-prefix: ${RATELIMIT_KEY_PREFIX:mv:rl:}
+    key-salt: ${RATE_LIMIT_KEY_SALT:}
+    fail-mode: ${RATELIMIT_FAIL_MODE:CLOSED}
+    rules:
+      - id: onboarding
+        match: ["POST:/api/v1/tenants"]
+        scopes: [IP, GLOBAL]
+        spec:
+          capacity: 3
+          refill-tokens: 3
+          refill-period: PT1H
+      - id: onboarding-global
+        match: ["POST:/api/v1/tenants"]
+        scopes: [GLOBAL]
+        spec:
+          capacity: 200
+          refill-tokens: 200
+          refill-period: PT1H
+      - id: api-default
+        match: ["/api/**"]
+        scopes: [IP]
+        spec:
+          capacity: 300
+          refill-tokens: 300
+          refill-period: PT1M
   client-ip:
     trusted-proxies: ${RL_TRUSTED_PROXIES:}
   upload:

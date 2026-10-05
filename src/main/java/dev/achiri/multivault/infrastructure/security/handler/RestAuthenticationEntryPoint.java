@@ -1,23 +1,20 @@
 package dev.achiri.multivault.infrastructure.security.handler;
 
-import dev.achiri.multivault.common.response.ErrorResponse;
+import dev.achiri.multivault.infrastructure.ratelimit.handler.JsonErrorWriter;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
-import org.springframework.http.MediaType;
 import org.springframework.security.core.AuthenticationException;
 import org.springframework.security.web.AuthenticationEntryPoint;
 import org.springframework.stereotype.Component;
-import tools.jackson.databind.ObjectMapper;
 
 import java.io.IOException;
-import java.time.LocalDateTime;
 
 @Component
 @RequiredArgsConstructor
 public class RestAuthenticationEntryPoint implements AuthenticationEntryPoint {
 
-    private final ObjectMapper objectMapper;
+    private final JsonErrorWriter jsonErrorWriter;
 
     @Override
     public void commence(
@@ -25,9 +22,6 @@ public class RestAuthenticationEntryPoint implements AuthenticationEntryPoint {
             HttpServletResponse response,
             AuthenticationException authException) throws IOException {
 
-        response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
-        response.setContentType(MediaType.APPLICATION_JSON_VALUE);
-        objectMapper.writeValue(response.getOutputStream(),
-                new ErrorResponse(401, "Autenticación requerida", LocalDateTime.now()));
+        jsonErrorWriter.write(response, HttpServletResponse.SC_UNAUTHORIZED, "Autenticación requerida");
     }
 }

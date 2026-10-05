@@ -1,5 +1,6 @@
 package dev.achiri.multivault.security;
 
+import dev.achiri.multivault.infrastructure.ratelimit.handler.JsonErrorWriter;
 import dev.achiri.multivault.infrastructure.security.handler.RestAuthenticationEntryPoint;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.MediaType;
@@ -14,7 +15,7 @@ class RestAuthenticationEntryPointTest {
 
     @Test
     void writesUnauthorizedErrorResponse() throws Exception {
-        RestAuthenticationEntryPoint entryPoint = new RestAuthenticationEntryPoint(new JsonMapper());
+        RestAuthenticationEntryPoint entryPoint = new RestAuthenticationEntryPoint(new JsonErrorWriter(new JsonMapper()));
         MockHttpServletResponse response = new MockHttpServletResponse();
 
         entryPoint.commence(new MockHttpServletRequest(), response, new BadCredentialsException("nope"));

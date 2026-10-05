@@ -1,9 +1,11 @@
 package dev.achiri.multivault.infrastructure.security.config;
 
 import dev.achiri.multivault.infrastructure.persistence.tenant.context.TenantContextFilter;
+import dev.achiri.multivault.infrastructure.ratelimit.web.RateLimitFilter;
 import dev.achiri.multivault.infrastructure.security.apikey.ApiKeyAuthenticationFilter;
 import dev.achiri.multivault.infrastructure.security.handler.RestAuthenticationEntryPoint;
 import dev.achiri.multivault.infrastructure.security.jwt.JwtAuthenticationFilter;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
@@ -20,10 +22,15 @@ import org.springframework.security.web.authentication.UsernamePasswordAuthentic
 public class SecurityConfig {
 
     @Bean
-    SecurityFilterChain securityFilterChain(HttpSecurity http, ApiKeyAuthenticationFilter apiKeyAuthenticationFilter,
-                                            JwtAuthenticationFilter jwtAuthenticationFilter,
-                                            TenantContextFilter tenantContextFilter,
-                                            RestAuthenticationEntryPoint restAuthenticationEntryPoint) throws Exception {
+    SecurityFilterChain securityFilterChain(
+            HttpSecurity http,
+            ApiKeyAuthenticationFilter apiKeyAuthenticationFilter,
+            JwtAuthenticationFilter jwtAuthenticationFilter,
+            TenantContextFilter tenantContextFilter,
+            RestAuthenticationEntryPoint restAuthenticationEntryPoint,
+            @Qualifier("ipRateLimitFilter") RateLimitFilter ipRateLimitFilter,
+            @Qualifier("tenantRateLimitFilter") RateLimitFilter tenantRateLimitFilter) throws Exception {
+
         http
                 .csrf(csrf -> csrf.disable())
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
@@ -36,8 +43,10 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.POST, "/api/v1/documents/*/versions").authenticated()
                         .requestMatchers(HttpMethod.GET, "/api/v1/documents/*").authenticated()
                         .anyRequest().authenticated())
+                .addFilterBefore(ipRateLimitFilter, UsernamePasswordAuthenticationFilter.class)
                 .addFilterBefore(apiKeyAuthenticationFilter, UsernamePasswordAuthenticationFilter.class)
                 .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class)
+                .addFilterAfter(tenantRateLimitFilter, JwtAuthenticationFilter.class)
                 .addFilterAfter(tenantContextFilter, JwtAuthenticationFilter.class);
         return http.build();
     }
