@@ -153,7 +153,7 @@ src/main/java/dev/achiri/multivault/
     ├── security/                    # Authentication infrastructure
     │   ├── config/                  # SecurityConfig, JwtProperties
     │   ├── apikey/                  # ApiKeyAuthenticationFilter, ApiKeyAuthenticator
-    │   ├── jwt/                     # JwtAuthenticationFilter, MultiIssuerJwtDecoder, JwksProvider
+    │   ├── jwt/                     # JwtAuthenticationFilter, MultiIssuerJwtDecoder, JwksProvider, JwksUriPolicy
     │   ├── codec/                   # JJWT <-> Jackson 3 serializers
     │   └── handler/                 # RestAuthenticationEntryPoint
     └── storage/                     # Object storage abstraction

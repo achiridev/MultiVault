@@ -6,3 +6,10 @@ logging:
 storage:
   backblaze-b2:
     enabled: false
+
+multivault:
+  jwks:
+    allow-http: true
+    allow-private-hosts: true
+    allowed-ports: "*"
+    verify-reachability: false

@@ -50,6 +50,14 @@ multivault:
   upload:
     max-size-bytes: ${UPLOAD_MAX_SIZE_BYTES:104857600}
     allowed-mime-types: ${UPLOAD_ALLOWED_MIME_TYPES:application/pdf,text/plain,text/csv,image/png,image/jpeg,image/webp,image/gif,application/json,application/zip,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.openxmlformats-officedocument.presentationml.presentation}
+  jwks:
+    allow-http: ${JWKS_ALLOW_HTTP:false}
+    allow-private-hosts: ${JWKS_ALLOW_PRIVATE_HOSTS:false}
+    allowed-ports: ${JWKS_ALLOWED_PORTS:443}
+    allowed-hosts: ${JWKS_ALLOWED_HOSTS:}
+    verify-reachability: ${JWKS_VERIFY_REACHABILITY:true}
+    probe-timeout-millis: ${JWKS_PROBE_TIMEOUT_MILLIS:5000}
+    max-body-bytes: ${JWKS_MAX_BODY_BYTES:262144}
 
 server:
   port: ${PORT:8080}

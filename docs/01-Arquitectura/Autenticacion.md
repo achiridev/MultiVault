@@ -18,7 +18,7 @@ Cada tenant configura su propio Identity Provider externo.
 CREATE TABLE tenant_identity_provider (
     tenant_id           UUID PRIMARY KEY,
     issuer              VARCHAR(255) NOT NULL,   -- claim 'iss' esperado
-    jwks_uri            VARCHAR(500) NOT NULL,   -- endpoint de llaves públicas
+    jwks_uri            VARCHAR(500) NOT NULL,   -- endpoint de llaves públicas (https + IP pública, validado en app)
     audience            VARCHAR(255) NOT NULL,   -- claim 'aud' esperado
     allowed_algorithms  TEXT[] DEFAULT '{RS256}',
     clock_skew_seconds  INTEGER DEFAULT 60,
@@ -29,6 +29,7 @@ CREATE TABLE tenant_identity_provider (
 
 - Sin fila en esta tabla → ningún JWT de ese tenant puede validarse. Por eso es **obligatoria al crear el tenant** (`POST /api/v1/tenants` rechaza con 400 si falta) y se actualiza con `PUT /api/v1/tenants/identity-provider` (ADR-0006), que solo acepta credenciales SERVICE y opera sobre el tenant del principal autenticado (ADR-0012).
 - El algoritmo `'none'` está explícitamente prohibido
+- `jwks_uri` no tiene CHECK en BD: la validación de esquema (`https`) y de destino (resolución DNS + rangos privados) solo puede hacerse en la aplicación, porque el servidor de base de datos no resuelve nombres ni conoce la política de egress. Se aplica en `JwksUriPolicy` al escribir y en cada `JwksProvider.fetch` (ADR-0015, ver Seguridad.md).
 - Cada tenant usa su propio `issuer`, lo que permite validar JWTs de múltiples fuentes
 
 **Librería JWT:** se usa `jjwt-api` + `jjwt-impl` (sin `jjwt-jackson`, que arrastraría Jackson 2 y rompería la persistencia JSON de Hibernate — ver ADR-0007). La serialización JSON se hace con un codec propio sobre Jackson 3: `JwtJackson3Serializer` / `JwtJackson3Deserializer` (`infrastructure.security.codec`). Toda construcción/parseo de JWT debe registrarlo: `Jwts.builder().serializeToJsonWith(serializer)` y `Jwts.parser().deserializeJsonWith(deserializer)`.
@@ -44,6 +45,7 @@ CREATE TABLE tenant_identity_provider (
   2. Busca el provider por issuer (`findByIssuerAndIsActiveTrue`); sin fila → JWT inválido.
   3. Valida `alg` contra `allowed_algorithms` del provider.
   4. Obtiene el JWKS del issuer (`JwksProvider`, cacheado 10 min en Redis) y resuelve la clave RSA desde `n`/`e` del JWK:
+     - Antes de cada `send`, `JwksUriPolicy` revalida el `jwks_uri` almacenado (https, puerto, IP pública). Un rechazo se traduce a JWT inválido → `401`, nunca `500`, y no sale tráfico (ADR-0015).
      - El token trae `kid` → match exacto obligatorio en el JWKS. No hay fallback a otra clave (ADR-0014).
      - El token **no** trae `kid` → solo se acepta si el JWKS tiene exactamente una clave RSA; si hay varias, el token es ambiguo y se rechaza.
   5. Verifica la firma con `Jwts.parser().verifyWith(publicKey)`. Si falla la firma **o el `kid` no aparece en el JWKS** (`UnknownKeyException`), se hace `evict` del JWKS cacheado y se reintenta una vez (soporta key rotation del IdP con caché stale). Agotado el reintento → JWT inválido.

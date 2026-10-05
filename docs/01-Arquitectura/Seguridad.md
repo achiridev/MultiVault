@@ -8,6 +8,34 @@ Documentar las consideraciones de seguridad del sistema, controles implementados
 
 Existen controles de seguridad a nivel de base de datos (constraints, checks, índices parciales). Spring Security está configurado en `infrastructure/security/config/SecurityConfig`: CSRF deshabilitado, sesiones `STATELESS`, `POST /api/v1/tenants` público (onboarding self-serve) y el resto de endpoints autenticados. Autenticación por API key implementada (`ApiKeyAuthenticationFilter`): valida la key en cada request con caché Redis y responde `401` con `ErrorResponse` JSON (`RestAuthenticationEntryPoint`, en `infrastructure.security.handler`). Autenticación JWT multi-issuer implementada (`JwtAuthenticationFilter`): valida la firma contra el JWKS del tenant (cacheado en Redis), exige `iss`/`aud` configurados, resuelve la clave por match estricto de `kid` sin fallback a otra clave del JWKS (ADR-0014), hace upsert de `tenant_member` y **no autentica un JWT sin una key STANDARD del mismo tenant** (ADR-0011). Los scopes de la key se evalúan con `@EnableMethodSecurity` + `@PreAuthorize` (`SCOPE_<scope>`) en los controllers; scope insuficiente → `403` (`AccessDeniedException` mapeado en `GlobalExceptionHandler`). Los endpoints de configuración del tenant (`identity-provider`, `status`) son service-to-service: solo aceptan credenciales `SERVICE` y derivan el `tenantId` del principal autenticado (`CurrentTenant.serviceTenantId()`), sin path, cerrando el vector IDOR cross-tenant (ADR-0012). Login de platform_user pendiente.
 
+### Control anti-SSRF sobre `jwks_uri` (ADR-0015)
+
+`jwks_uri` es una URL de entrada controlada por el tenant y el backend la pide en cada verificación de firma, así que sin validación era un vector SSRF exploitable incluso sin autenticación (`POST /api/v1/tenants` es público y `verifyWithRetry` dispara un refetch ante cualquier `kid` desconocido, ADR-0014). Se implementaron dos capas:
+
+**Capa 1 — `JwksUriPolicy`, antes de persistir.** Se ejecuta en `TenantService.create` y `TenantService.updateIdentityProvider`, antes de cualquier escritura (si la URL es inválida no se inserta nada, no se crea el schema y no queda un tenant en `SUSPENDED`):
+
+| Control | Rechaza |
+|---|---|
+| Esquema | Todo distinto de `https` (configurable con `allow-http`) |
+| Estructura | URI relativa, host vacío, `userInfo` embebido, fragmento, longitud > 500 (límite de la columna) |
+| Puerto | Cualquiera fuera de `allowed-ports` (default `443`) |
+| Allowlist | Host fuera de `allowed-hosts`, si se configura |
+| Resolución | Cualquier IP resuelta que sea loopback, site-local, link-local, any-local, multicast, `0.0.0.0/8`, `100.64.0.0/10`, `198.18.0.0/15`, `224.0.0.0/4`+, ULA `fc00::/7`, `fe80::/10` o IPv4-mapped |
+| Nombres | Sufijos `.localhost`, `.local`, `.internal` (rechazados por nombre, sin DNS) |
+| DNS | `UnknownHostException` |
+
+Esto cierra el caso grave —`http://169.254.169.254/latest/meta-data/...` y las redes internas— **sin emitir un solo paquete**, porque el rechazo ocurre en la resolución del host.
+
+**Capa 2 — probe de alcanzabilidad.** `JwksProvider.probe` ejecuta la misma política y luego un GET con timeout que exige `200` y ≥1 clave RSA con `n`/`e` utilizables. Evita el tenant `ACTIVE` con IdP roto. Los fallos de red y de contenido devuelven un **único** mensaje (`jwks_uri rechazada: no alcanzable o sin un JWKS válido`) para no Regalarle al atacante un oráculo de tres estados; se mapea a `400`.
+
+**Capa 3 — defensa en runtime.** `JwksProvider.fetch` vuelve a validar antes de cada `send`, lo que cubre las filas ya persistidas y cualquier camino futuro que escriba `tenant_identity_provider` sin pasar por el servicio. `MultiIssuerJwtDecoder` traduce el rechazo a `InvalidJwtException` → `401`, no `500`.
+
+**Hardening del cliente HTTP.** `HttpClient.Redirect.NEVER` explícito (un `302` en el JWKS no se sigue) y `BodyHandlers.ofInputStream` con corte por `max-body-bytes` (256 KB), antes `ofString` no tenía techo y un endpoint hostil podía envenenar el caché Redis `jwks`.
+
+Configuración en `multivault.jwks` (`JwksProperties`). `application-test.yaml` relaja `allow-http`, `allow-private-hosts`, `allowed-ports` y `verify-reachability` porque los tests sirven el JWKS con el `HttpServer` del JDK sobre `localhost`; `JwksUriProvisioningTest` y `JwksReachabilityProbeTest` revierten esos defaults para ejercitar la política en modo estricto.
+
+**Riesgo residual (documentado en el ADR, no implementado):** validar antes de enviar no cierra la ventana de DNS rebinding entre `getAllByName` y el connect del `HttpClient`. La mitigación definitiva es un proxy de egreso con allowlist o un `HttpClient` que fije la IP validada preservando SNI.
+
 ## Información encontrada
 
 ### Controles a nivel de base de datos
@@ -46,6 +74,7 @@ El paquete `dev.achiri.multivault.audit` implementa la auditoría con eventos de
 - [x] Configurar Spring Security con cadena de filtros (`SecurityConfig`)
 - [ ] Implementar `SecurityFilterChain` con CORS, rate limiting — CSRF ya deshabilitado (API stateless)
 - [x] Implementar autenticación por API keys (`ApiKeyAuthenticationFilter`) y JWT multi-issuer (`JwtAuthenticationFilter`) — login de platform_user pendiente
+- [x] Validar `jwks_uri` (https, host público, JWKS alcanzable) en provisioning y en cada fetch — ADR-0015
 - [x] Definir `@PreAuthorize` / `@PostAuthorize` en los controladores (implementados: documentos y tenant settings; el resto de endpoints pendientes de implementar)
 - [x] Implementar validación de scopes de API keys (`SCOPE_<scope>`, método-level; faltará constraint del catálogo al crear keys por API)
 - [ ] Implementar rate limiting por tenant y por API key
@@ -53,6 +82,7 @@ El paquete `dev.achiri.multivault.audit` implementa la auditoría con eventos de
 - [x] Implementar infraestructura de auditoría de eventos (paquete `audit/` + ADR-0003) — falta cubrir eventos específicos de seguridad (logins fallidos, keys revocadas)
 - [ ] Definir política de contraseñas para platform_user
 - [ ] Configurar HTTPS/TLS
+- [ ] Proteger el egress con allowlist de destinos (cierra el DNS rebinding que deja abierto la validación de `jwks_uri`)
 - [ ] Implementar protección contra ataques comunes (XSS, CSRF, SQL injection, etc.)
 
 ## Preguntas abiertas
@@ -62,3 +92,4 @@ El paquete `dev.achiri.multivault.audit` implementa la auditoría con eventos de
 - ¿Cómo se maneja la rotación de secrets (JWKS keys, API keys)?
 - ¿Se implementa cifrado del lado del cliente para documentos sensibles?
 - ¿Hay requerimientos de Data Residency / GDPR?
+- ¿Se aplica rate limiting a `POST /api/v1/tenants`? Hoy es público y cada request anónimo dispara 5 `INSERT` + `CREATE SCHEMA` + un ciclo completo de Flyway (ADR-0015).
