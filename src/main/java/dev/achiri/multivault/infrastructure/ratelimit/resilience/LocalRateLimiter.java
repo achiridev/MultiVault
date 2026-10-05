@@ -19,7 +19,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 public class LocalRateLimiter implements RateLimiter {
 
     private static final Duration IDLE_RETENTION = Duration.ofMinutes(30);
-    private static final int EVICTION_INTERVAL_IN_CONSUMPTIONS = 1024;
+    private static final int EVICTION_CHECK_INTERVAL_IN_CONSUMPTIONS = 32;
     private static final long NANOS_PER_MILLI = 1_000_000L;
 
     private final Map<String, LocalBucket> buckets = new ConcurrentHashMap<>();
@@ -59,10 +59,10 @@ public class LocalRateLimiter implements RateLimiter {
     }
 
     private void evictIdleBucketsIfDue() {
-        if (consumptionsSinceEviction.incrementAndGet() < EVICTION_INTERVAL_IN_CONSUMPTIONS) {
+        if (consumptionsSinceEviction.incrementAndGet() < EVICTION_CHECK_INTERVAL_IN_CONSUMPTIONS) {
             return;
         }
-        if (!consumptionsSinceEviction.compareAndSet(EVICTION_INTERVAL_IN_CONSUMPTIONS, 0)) {
+        if (!consumptionsSinceEviction.compareAndSet(EVICTION_CHECK_INTERVAL_IN_CONSUMPTIONS, 0)) {
             return;
         }
         evictIdleBuckets();

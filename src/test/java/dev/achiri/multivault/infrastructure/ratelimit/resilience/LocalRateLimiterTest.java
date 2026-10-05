@@ -73,6 +73,24 @@ class LocalRateLimiterTest {
         assertThat(decision.limit()).isEqualTo(3);
     }
 
+    @Test
+    void evictsIdleBucketsSoARotatingClientCannotGrowMemoryWithoutBound() {
+        MutableClock clock = new MutableClock(Instant.parse("2026-01-01T00:00:00Z"));
+        LocalRateLimiter limiter = new LocalRateLimiter(clock);
+        BucketSpec spec = new BucketSpec(1, 1, Duration.ofMinutes(1));
+        for (int client = 0; client < 50; client++) {
+            limiter.consume("ip-" + client, RateLimitScope.IP, "onboarding", spec);
+        }
+        assertThat(limiter.trackedBuckets()).isEqualTo(50);
+
+        clock.advance(Duration.ofHours(1));
+        for (int request = 0; request < 64; request++) {
+            limiter.consume("ip-nuevo", RateLimitScope.IP, "onboarding", spec);
+        }
+
+        assertThat(limiter.trackedBuckets()).isLessThan(50);
+    }
+
     private static RateLimitDecision consume(LocalRateLimiter limiter, String key) {
         return limiter.consume(key, RateLimitScope.IP, "onboarding", THREE_PER_HOUR);
     }
