@@ -170,5 +170,5 @@ CREATE TABLE tenant_member (
 
 - ¿Los JWTs se validan contra el JWKS URI en cada request o se cachean las claves? → **Resuelto:** el JWKS se cachea en Redis (TTL 10 min) y se re-descarga al fallar la firma (evict + retry, soporta key rotation)
 - ¿Cómo se distingue si un request usa JWT vs API Key? → **Resuelto:** por prefijo `mv_live_` en el token Bearer (`ApiKeyAuthenticationFilter`)
-- ¿Los SERVICE keys requieren algún tipo de rate limiting diferente?
+- ~~¿Los SERVICE keys requieren algún tipo de rate limiting diferente?~~ El scope `API_KEY` del rate limiter ya está implementado ([ADR-0016](../06-Decisiones/ADR-0016.md)) y `TenantRateLimitKeyResolver` lo resuelve desde el `ApiKeyPrincipal` sin I/O adicional. Falta decidir si el límite por API key se deriva de `plan.max_requests_per_minute` y si las SERVICE keys llevan un techo más estricto que las STANDARD.
 - ¿Cómo se maneja la expiración de sesiones de platform_user?

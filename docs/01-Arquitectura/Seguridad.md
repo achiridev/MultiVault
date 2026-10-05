@@ -72,12 +72,14 @@ El paquete `dev.achiri.multivault.audit` implementa la auditoría con eventos de
 ## Pendientes
 
 - [x] Configurar Spring Security con cadena de filtros (`SecurityConfig`)
-- [ ] Implementar `SecurityFilterChain` con CORS, rate limiting — CSRF ya deshabilitado (API stateless)
+- [ ] Implementar CORS en `SecurityFilterChain` — CSRF ya deshabilitado (API stateless); el rate limiting ya está implementado (ADR-0016)
 - [x] Implementar autenticación por API keys (`ApiKeyAuthenticationFilter`) y JWT multi-issuer (`JwtAuthenticationFilter`) — login de platform_user pendiente
 - [x] Validar `jwks_uri` (https, host público, JWKS alcanzable) en provisioning y en cada fetch — ADR-0015
 - [x] Definir `@PreAuthorize` / `@PostAuthorize` en los controladores (implementados: documentos y tenant settings; el resto de endpoints pendientes de implementar)
 - [x] Implementar validación de scopes de API keys (`SCOPE_<scope>`, método-level; faltará constraint del catálogo al crear keys por API)
-- [ ] Implementar rate limiting por tenant y por API key
+- [x] Rate limiting distribuido por IP con corte global, `Idempotency-Key` y aprovisionamiento asíncrono en `POST /api/v1/tenants` — ADR-0016
+- [x] Resolución de IP real detrás de proxies de confianza (`TrustedProxyClientIpResolver`), compartida por auditoría y rate limiting
+- [ ] Implementar rate limiting por tenant y por API key (`max_requests_per_minute` del plan sigue sin enforcement)
 - [ ] Aplicar REVOKE a nivel de base de datos para `audit_log`
 - [x] Implementar infraestructura de auditoría de eventos (paquete `audit/` + ADR-0003) — falta cubrir eventos específicos de seguridad (logins fallidos, keys revocadas)
 - [ ] Definir política de contraseñas para platform_user
@@ -92,4 +94,5 @@ El paquete `dev.achiri.multivault.audit` implementa la auditoría con eventos de
 - ¿Cómo se maneja la rotación de secrets (JWKS keys, API keys)?
 - ¿Se implementa cifrado del lado del cliente para documentos sensibles?
 - ¿Hay requerimientos de Data Residency / GDPR?
-- ¿Se aplica rate limiting a `POST /api/v1/tenants`? Hoy es público y cada request anónimo dispara 5 `INSERT` + `CREATE SCHEMA` + un ciclo completo de Flyway (ADR-0015).
+- ~~¿Se aplica rate limiting a `POST /api/v1/tenants`?~~ **Resuelto por [ADR-0016](../06-Decisiones/ADR-0016.md)**: 3 tenants/hora por IP con corte global de 200/hora, `Idempotency-Key` y aprovisionamiento asíncrono, así que el request anónimo ya no paga `CREATE SCHEMA` ni Flyway.
+- ¿Se aplica un límite por tenant y por API key a partir de `plan.max_requests_per_minute`? La columna está sembrada desde `V2__plan_seed.sql` (FREE 60, PRO 1000, BUSINESS 3000, ENTERPRISE 6000) pero nadie la lee. La decisión de no meter una lectura de `plan` en el camino caliente está en ADR-0016.

@@ -229,6 +229,19 @@ src/main/java/dev/achiri/multivault/
 | `B2_BUCKET` | — | B2 bucket name |
 | `UPLOAD_MAX_SIZE_BYTES` | `104857600` | Max upload size (default: 100 MB) |
 | `UPLOAD_ALLOWED_MIME_TYPES` | — | Comma-separated allowlist (empty = allow all) |
+| `RATE_LIMIT_KEY_SALT` | — | **Required** in production. HMAC salt for rate limit keys (see ADR-0016) |
+| `RATELIMIT_ENABLED` | `true` | Enable rate limiting |
+| `RATELIMIT_FAIL_MODE` | `CLOSED` | `CLOSED` degrades to a per-instance in-memory limit; `OPEN` disables limiting while Redis is down |
+| `RATELIMIT_KEY_PREFIX` | `mv:rl:` | Prefix for rate limit Redis keys |
+| `RL_TRUSTED_PROXIES` | — | Comma-separated CIDRs allowed to set `X-Forwarded-For` (empty = trust nothing) |
+| `IDEMPOTENCY_ENABLED` | `true` | Enable `Idempotency-Key` on tenant onboarding |
+| `IDEMPOTENCY_MAX_BODY_BYTES` | `16384` | Max request body fingerprintable for idempotency |
+| `PROVISIONING_ASYNC_ENABLED` | `true` | Provision tenant schemas asynchronously via Redis Streams (ADR-0016) |
+| `PROVISIONING_MAX_ATTEMPTS` | `3` | Provisioning attempts before the tenant is suspended |
+| `PROVISIONING_STALE_AFTER` | `PT10M` | Time a tenant may stay `PENDING_PROVISIONING` before the reconciler re-enqueues it |
+
+> **`RATE_LIMIT_KEY_SALT` must be set in production.** The application fails to start without it
+> when rate limiting is enabled. Never hardcode it (see `AGENTS.md`).
 
 ### Profiles
 
