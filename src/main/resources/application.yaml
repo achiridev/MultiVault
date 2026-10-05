@@ -74,6 +74,12 @@ multivault:
           capacity: 300
           refill-tokens: 300
           refill-period: PT1M
+  idempotency:
+    enabled: ${IDEMPOTENCY_ENABLED:true}
+    key-prefix: ${IDEMPOTENCY_KEY_PREFIX:mv:idem:}
+    in-progress-ttl: ${IDEMPOTENCY_IN_PROGRESS_TTL:PT10M}
+    completed-ttl: ${IDEMPOTENCY_COMPLETED_TTL:PT24H}
+    max-body-bytes: ${IDEMPOTENCY_MAX_BODY_BYTES:16384}
   client-ip:
     trusted-proxies: ${RL_TRUSTED_PROXIES:}
   upload:
