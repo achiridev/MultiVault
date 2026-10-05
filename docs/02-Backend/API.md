@@ -12,6 +12,8 @@ Implementado: `POST /api/v1/tenants` (creación de organización), `PUT /api/v1/
 
 Crea el tenant con su schema físico: `tenant` (`PENDING_PROVISIONING` → `ACTIVE`), `subscription` (ACTIVE), `tenant_usage`, `tenant_member` (admin), `tenant_identity_provider` (obligatorio), schema PostgreSQL migrado vía Flyway (`db/tenant`) y la API key inicial del admin (raw mostrada una sola vez). `schema_name` se deriva de `name` (`mv_` + slug). Requiere `planId` existente y activo (`404` si no); `201 Created` en éxito; `409` si `schema_name` duplicado; `400` si `name` no genera slug válido. Si el aprovisionamiento del schema falla, el tenant queda `SUSPENDED` y el endpoint responde `500`.
 
+`identityProvider.jwksUri` se valida **antes de cualquier escritura** (ADR-0015): debe ser `https`, sin credenciales embebidas ni fragmento, longitud ≤ 500, puerto en `allowed-ports` (default `443`), apuntar a una IP pública (se rechazan loopback, site-local, link-local, multicast, CGNAT, ULA, IPv4-mapped y los sufijos `.localhost`/`.local`/`.internal`) y devolver un JWKS con al menos una clave RSA utilizable. Un rechazo devuelve `400` y **no** deja tenant, schema ni fila de `tenant_identity_provider`: el motivo del fallo es la URL, no la provisión. Los fallos de alcance y de contenido comparten un único mensaje (`jwks_uri rechazada: no alcanzable o sin un JWKS válido`) para no exponer un oráculo de estados a un llamante anónimo (este endpoint es público).
+
 Request:
 ```json
 {
@@ -62,7 +64,7 @@ Scopes requeridos por los endpoints implementados:
 
 ### PUT `/api/v1/tenants/identity-provider` — Actualizar identity provider (implementado)
 
-Solo acepta credenciales SERVICE (llave maestra del tenant). El tenant operado es el del principal autenticado, no hay `tenantId` en la ruta (ADR-0012). Actualiza (upsert) la configuración OIDC/JWT del tenant. `404` si el tenant no existe; `400` con body inválido; `403` si la credencial no es SERVICE (p. ej. STANDARD+JWT o JWT puro); `200` con el DTO actualizado. Registra auditoría `TENANT_IDENTITY_PROVIDER_UPDATED`.
+Solo acepta credenciales SERVICE (llave maestra del tenant). El tenant operado es el del principal autenticado, no hay `tenantId` en la ruta (ADR-0012). Actualiza (upsert) la configuración OIDC/JWT del tenant. `404` si el tenant no existe; `400` con body inválido; `400` si `jwksUri` no supera la validación de ADR-0015 (en cuyo caso la configuración anterior queda intacta); `403` si la credencial no es SERVICE (p. ej. STANDARD+JWT o JWT puro); `200` con el DTO actualizado. Registra auditoría `TENANT_IDENTITY_PROVIDER_UPDATED`.
 
 Request:
 ```json

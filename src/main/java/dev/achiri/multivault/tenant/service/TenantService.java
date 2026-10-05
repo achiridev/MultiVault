@@ -9,6 +9,7 @@ import dev.achiri.multivault.common.exception.RecursoNoEncontradoException;
 import dev.achiri.multivault.common.exception.TenantProvisioningException;
 import dev.achiri.multivault.common.util.SlugUtils;
 import dev.achiri.multivault.infrastructure.persistence.tenant.TenantSchemaProvisioner;
+import dev.achiri.multivault.infrastructure.security.jwt.jwks.JwksProvider;
 import dev.achiri.multivault.plan.model.Plan;
 import dev.achiri.multivault.plan.repository.PlanRepository;
 import dev.achiri.multivault.subscription.mapper.SubscriptionMapper;
@@ -45,6 +46,7 @@ public class TenantService {
     private final TenantProvisioningService tenantProvisioningService;
     private final TenantSchemaProvisioner tenantSchemaProvisioner;
     private final ApplicationEventPublisher applicationEventPublisher;
+    private final JwksProvider jwksProvider;
 
     private final PlanRepository planRepository;
     private final TenantRepository tenantRepository;
@@ -60,6 +62,8 @@ public class TenantService {
         Plan plan = planRepository.findById(request.planId())
                 .filter(Plan::getIsActive)
                 .orElseThrow(() -> new RecursoNoEncontradoException("plan", request.planId()));
+
+        jwksProvider.probe(request.identityProvider().jwksUri());
 
         String schemaName = generateSchemaName(request.name());
 
@@ -119,6 +123,8 @@ public class TenantService {
             UUID tenantId, UpdateTenantIdentityProviderRequest request) {
         Tenant tenant = tenantRepository.findById(tenantId)
                 .orElseThrow(() -> new RecursoNoEncontradoException("tenant", tenantId));
+
+        jwksProvider.probe(request.jwksUri());
 
         TenantIdentityProvider identityProvider = tenantIdentityProviderMapper.toEntity(request);
         identityProvider.setTenantId(tenantId);

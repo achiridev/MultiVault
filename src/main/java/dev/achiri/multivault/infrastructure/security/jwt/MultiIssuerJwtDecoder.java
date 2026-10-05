@@ -1,5 +1,6 @@
 package dev.achiri.multivault.infrastructure.security.jwt;
 
+import dev.achiri.multivault.common.exception.JwksUriInvalidaException;
 import dev.achiri.multivault.infrastructure.security.codec.JwtJackson3Deserializer;
 import dev.achiri.multivault.infrastructure.security.jwt.exception.InvalidJwtException;
 import dev.achiri.multivault.infrastructure.security.jwt.exception.UnknownKeyException;
@@ -82,7 +83,7 @@ public class MultiIssuerJwtDecoder {
     }
 
     private Claims verify(String token, TenantIdentityProvider provider, String headerAlgorithm, String keyId) {
-        PublicKey publicKey = resolvePublicKey(jwksProvider.fetch(provider.getJwksUri()), keyId);
+        PublicKey publicKey = resolvePublicKey(fetchJwks(provider.getJwksUri()), keyId);
         Jws<Claims> jws = Jwts.parser()
                 .verifyWith(publicKey)
                 .deserializeJsonWith(deserializer)
@@ -90,6 +91,14 @@ public class MultiIssuerJwtDecoder {
                 .build()
                 .parseSignedClaims(token);
         return jws.getPayload();
+    }
+
+    private List<JwkEntry> fetchJwks(String jwksUri) {
+        try {
+            return jwksProvider.fetch(jwksUri);
+        } catch (JwksUriInvalidaException e) {
+            throw new InvalidJwtException("jwks_uri del tenant rechazada", e);
+        }
     }
 
     private PublicKey resolvePublicKey(List<JwkEntry> entries, String keyId) {

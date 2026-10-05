@@ -29,7 +29,7 @@ Flyway está habilitado (`spring-boot-starter-flyway` + `flyway-database-postgre
 | `plan` | id, code (FREE/PRO/BUSINESS/ENTERPRISE), name, price_cents, max_storage_bytes, max_users, max_requests_per_minute, is_active | PK, UNIQUE(code), CHECK(price_cents >= 0), CHECK(max_storage_bytes >= 0) |
 | `tenant` | id, name, schema_name, status, current_plan_id, suspended_at, suspended_reason | PK, UNIQUE(schema_name), CHECK regex schema_name, CHECK status IN(...) |
 | `subscription` | id, tenant_id, plan_id, status, starts_at, ends_at, cancelled_at | PK, FK(tenant), FK(plan), PARTIAL UNIQUE INDEX one active |
-| `tenant_identity_provider` | tenant_id, issuer, jwks_uri, audience, allowed_algorithms, clock_skew_seconds | PK(FK tenant), CHECK no 'none' algorithm |
+| `tenant_identity_provider` | tenant_id, issuer, jwks_uri, audience, allowed_algorithms, clock_skew_seconds | PK(FK tenant), CHECK no 'none' algorithm. `jwks_uri` sin CHECK: exige `https` + IP pública, validado en app (ADR-0015) |
 | `api_key` | id, tenant_id, name, key_prefix, key_hash, key_type, scopes, last_used_at | PK, FK(tenant), PARTIAL UNIQUE INDEX(key_hash WHERE NOT revoked) |
 | `platform_user` | id, email, password_hash, full_name, role | PK, UNIQUE(email), CHECK role IN(SUPER_ADMIN, SUPPORT) |
 | `tenant_member` | id, tenant_id, subject, display_name, email, is_active | PK, FK(tenant), UNIQUE(tenant_id, subject) |

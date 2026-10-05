@@ -104,6 +104,11 @@ public class GlobalExceptionHandler {
         return ResponseEntity.status(HttpStatus.FORBIDDEN).body(error);
     }
 
+    @ExceptionHandler(JwksUriInvalidaException.class)
+    public ResponseEntity<ErrorResponse> handleJwksUriInvalida(JwksUriInvalidaException ex) {
+        return ResponseEntity.badRequest().body(error(400, ex.getMessage()));
+    }
+
     @ExceptionHandler(ArchivoInvalidoException.class)
     public ResponseEntity<ErrorResponse> handleArchivoInvalido(ArchivoInvalidoException ex) {
         return ResponseEntity.badRequest().body(error(400, ex.getMessage()));
