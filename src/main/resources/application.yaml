@@ -47,6 +47,52 @@ storage:
     bucket: ${B2_BUCKET:}
 
 multivault:
+  ratelimit:
+    enabled: ${RATELIMIT_ENABLED:true}
+    key-prefix: ${RATELIMIT_KEY_PREFIX:mv:rl:}
+    key-salt: ${RATE_LIMIT_KEY_SALT:}
+    fail-mode: ${RATELIMIT_FAIL_MODE:CLOSED}
+    rules:
+      - id: onboarding
+        match: ["POST:/api/v1/tenants"]
+        scopes: [IP, GLOBAL]
+        spec:
+          capacity: 3
+          refill-tokens: 3
+          refill-period: PT1H
+      - id: onboarding-global
+        match: ["POST:/api/v1/tenants"]
+        scopes: [GLOBAL]
+        spec:
+          capacity: 200
+          refill-tokens: 200
+          refill-period: PT1H
+      - id: api-default
+        match: ["/api/**"]
+        scopes: [IP]
+        spec:
+          capacity: 300
+          refill-tokens: 300
+          refill-period: PT1M
+  provisioning:
+    enabled: ${PROVISIONING_ASYNC_ENABLED:true}
+    stream-key: ${PROVISIONING_STREAM_KEY:mv:provisioning:jobs}
+    dead-letter-key: ${PROVISIONING_DLQ_KEY:mv:provisioning:jobs:dlq}
+    consumer-group: ${PROVISIONING_CONSUMER_GROUP:mv-provisioners}
+    consumer-name: ${PROVISIONING_CONSUMER_NAME:worker}
+    max-attempts: ${PROVISIONING_MAX_ATTEMPTS:3}
+    visibility-timeout: ${PROVISIONING_VISIBILITY_TIMEOUT:PT2M}
+    reconcile-interval: ${PROVISIONING_RECONCILE_INTERVAL:PT2M}
+    stale-after: ${PROVISIONING_STALE_AFTER:PT10M}
+    max-stream-length: ${PROVISIONING_MAX_STREAM_LENGTH:10000}
+  idempotency:
+    enabled: ${IDEMPOTENCY_ENABLED:true}
+    key-prefix: ${IDEMPOTENCY_KEY_PREFIX:mv:idem:}
+    in-progress-ttl: ${IDEMPOTENCY_IN_PROGRESS_TTL:PT10M}
+    completed-ttl: ${IDEMPOTENCY_COMPLETED_TTL:PT24H}
+    max-body-bytes: ${IDEMPOTENCY_MAX_BODY_BYTES:16384}
+  client-ip:
+    trusted-proxies: ${RL_TRUSTED_PROXIES:}
   upload:
     max-size-bytes: ${UPLOAD_MAX_SIZE_BYTES:104857600}
     allowed-mime-types: ${UPLOAD_ALLOWED_MIME_TYPES:application/pdf,text/plain,text/csv,image/png,image/jpeg,image/webp,image/gif,application/json,application/zip,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.openxmlformats-officedocument.presentationml.presentation}

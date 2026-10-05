@@ -102,6 +102,7 @@ class JwksReachabilityProbeTest extends BaseIntegrationTest {
 
         tenantId = response.tenant().id();
         schemaName = response.tenant().schemaName();
+        awaitActiveTenant(tenantId);
 
         assertThat(response.identityProvider().jwksUri()).isEqualTo(reachableUri);
         assertThat(schemaExists(schemaName)).isTrue();
@@ -166,6 +167,7 @@ class JwksReachabilityProbeTest extends BaseIntegrationTest {
         CreateTenantResponse response = tenantService.create(request("Acme Update Http", reachableUri));
         tenantId = response.tenant().id();
         schemaName = response.tenant().schemaName();
+        awaitActiveTenant(tenantId);
 
         mockMvc.perform(put("/api/v1/tenants/identity-provider")
                         .header("Authorization", "Bearer " + response.apiKey().key())

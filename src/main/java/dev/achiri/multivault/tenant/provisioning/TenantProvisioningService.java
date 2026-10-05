@@ -7,6 +7,7 @@ import dev.achiri.multivault.audit.event.AuditEventPublisher;
 import dev.achiri.multivault.audit.model.ActorType;
 import dev.achiri.multivault.common.exception.RecursoNoEncontradoException;
 import dev.achiri.multivault.plan.model.Plan;
+import dev.achiri.multivault.plan.repository.PlanRepository;
 import dev.achiri.multivault.subscription.mapper.SubscriptionMapper;
 import dev.achiri.multivault.subscription.model.Subscription;
 import dev.achiri.multivault.subscription.repository.SubscriptionRepository;
@@ -24,6 +25,7 @@ import dev.achiri.multivault.tenant.repository.TenantMemberRepository;
 import dev.achiri.multivault.tenant.repository.TenantRepository;
 import dev.achiri.multivault.tenant.repository.TenantUsageRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -48,11 +50,14 @@ public class TenantProvisioningService {
 
     private final ApiKeyService apiKeyService;
     private final AuditEventPublisher auditEventPublisher;
+    private final ApplicationEventPublisher applicationEventPublisher;
+    private final PlanRepository planRepository;
 
     @Transactional
     public OnboardingResult initialize(CreateTenantRequest request, Plan plan, String schemaName) {
         Tenant tenant = tenantMapper.toEntity(request);
         tenant.setSchemaName(schemaName);
+        tenant.setCurrentPlanId(plan.getId());
         tenantRepository.save(tenant);
 
         Subscription subscription = subscriptionMapper.toEntity(request);
@@ -92,18 +97,48 @@ public class TenantProvisioningService {
 
         ApiKeyResult apiKey = apiKeyService.createInitial(tenant.getId(), onboarding.admin().getId());
 
+        publishTenantCreated(tenant, plan, onboarding.admin());
+
+        return new ActivationResult(tenant, apiKey);
+    }
+
+    @Transactional
+    public ApiKeyResult issueInitialCredentialsAndRequestProvisioning(UUID tenantId, UUID adminId,
+                                                                     String schemaName, UUID planId) {
+        ApiKeyResult apiKey = apiKeyService.createInitial(tenantId, adminId);
+        applicationEventPublisher.publishEvent(
+                new ProvisioningRequestedEvent(tenantId, schemaName, planId));
+        return apiKey;
+    }
+
+    @Transactional
+    public boolean activateIfPending(UUID tenantId, UUID planId) {
+        if (tenantRepository.activateIfPending(tenantId, planId,
+                TenantStatus.PENDING_PROVISIONING, TenantStatus.ACTIVE) == 0) {
+            return false;
+        }
+        Tenant tenant = tenantRepository.findById(tenantId)
+                .orElseThrow(() -> new RecursoNoEncontradoException("tenant", tenantId));
+        publishTenantCreated(tenant, planRepository.findById(planId)
+                .orElseThrow(() -> new RecursoNoEncontradoException("plan", planId)), null);
+        return true;
+    }
+
+    private void publishTenantCreated(Tenant tenant, Plan plan, TenantMember admin) {
+        Map<String, Object> metadata = new java.util.HashMap<>();
+        metadata.put("tenant_name", tenant.getName());
+        metadata.put("plan_id", plan.getId().toString());
+        metadata.put("provisioning", "async");
+        if (admin != null) {
+            metadata.put("admin_email", admin.getEmail());
+        }
         auditEventPublisher.publish(AuditEvent.builder()
                 .tenantId(tenant.getId())
                 .actorType(ActorType.SYSTEM)
                 .action("TENANT_CREATED")
                 .resourceType("tenant")
                 .resourceId(tenant.getId())
-                .metadata(Map.of(
-                        "tenant_name", tenant.getName(),
-                        "plan_id", plan.getId().toString(),
-                        "admin_email", onboarding.admin().getEmail()))
+                .metadata(metadata)
                 .build());
-
-        return new ActivationResult(tenant, apiKey);
     }
 }

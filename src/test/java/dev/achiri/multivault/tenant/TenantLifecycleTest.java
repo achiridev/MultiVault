@@ -84,6 +84,7 @@ class TenantLifecycleTest extends BaseIntegrationTest {
                 request("Acme Cancel", plan.getId(), "sub_cancel_1", "admin@acme-cancel.com"));
         tenantId = response.tenant().id();
         schemaName = response.tenant().schemaName();
+        awaitActiveTenant(tenantId);
 
         TenantStatusResponse statusResponse = tenantLifecycleService.updateStatus(
                 tenantId, new UpdateTenantStatusRequest(TenantStatus.CANCELLED, "business_closed"));
@@ -123,6 +124,7 @@ class TenantLifecycleTest extends BaseIntegrationTest {
                 request("Acme Suspend", plan.getId(), "sub_suspend_1", "admin@acme-suspend.com"));
         tenantId = response.tenant().id();
         schemaName = response.tenant().schemaName();
+        awaitActiveTenant(tenantId);
 
         TenantStatusResponse statusResponse = tenantLifecycleService.updateStatus(
                 tenantId, new UpdateTenantStatusRequest(TenantStatus.SUSPENDED, "payment_overdue"));
@@ -158,6 +160,7 @@ class TenantLifecycleTest extends BaseIntegrationTest {
                 request("Acme Reinstate", plan.getId(), "sub_reinstate_1", "admin@acme-reinstate.com"));
         tenantId = response.tenant().id();
         schemaName = response.tenant().schemaName();
+        awaitActiveTenant(tenantId);
 
         tenantLifecycleService.updateStatus(
                 tenantId, new UpdateTenantStatusRequest(TenantStatus.SUSPENDED, "payment_issue"));
@@ -188,6 +191,7 @@ class TenantLifecycleTest extends BaseIntegrationTest {
                 request("Acme Cancelled", plan.getId(), "sub_cancelled_1", "admin@acme-cancelled.com"));
         tenantId = response.tenant().id();
         schemaName = response.tenant().schemaName();
+        awaitActiveTenant(tenantId);
 
         tenantLifecycleService.updateStatus(
                 tenantId, new UpdateTenantStatusRequest(TenantStatus.CANCELLED, "done"));
@@ -204,6 +208,7 @@ class TenantLifecycleTest extends BaseIntegrationTest {
                 request("Acme Cancelled2", plan.getId(), "sub_cancelled_2", "admin@acme-cancelled2.com"));
         tenantId = response.tenant().id();
         schemaName = response.tenant().schemaName();
+        awaitActiveTenant(tenantId);
 
         tenantLifecycleService.updateStatus(
                 tenantId, new UpdateTenantStatusRequest(TenantStatus.CANCELLED, "done"));
@@ -220,6 +225,7 @@ class TenantLifecycleTest extends BaseIntegrationTest {
                 request("Acme Same", plan.getId(), "sub_same_1", "admin@acme-same.com"));
         tenantId = response.tenant().id();
         schemaName = response.tenant().schemaName();
+        awaitActiveTenant(tenantId);
 
         TenantStatusResponse statusResponse = tenantLifecycleService.updateStatus(
                 tenantId, new UpdateTenantStatusRequest(TenantStatus.ACTIVE, null));
@@ -235,6 +241,7 @@ class TenantLifecycleTest extends BaseIntegrationTest {
                 request("Acme Suspended", plan.getId(), "sub_suspended_1", "admin@acme-suspended.com"));
         tenantId = response.tenant().id();
         schemaName = response.tenant().schemaName();
+        awaitActiveTenant(tenantId);
 
         tenantLifecycleService.updateStatus(
                 tenantId, new UpdateTenantStatusRequest(TenantStatus.SUSPENDED, "reason"));
@@ -253,6 +260,7 @@ class TenantLifecycleTest extends BaseIntegrationTest {
                 request("Acme SuspendThenCancel", plan.getId(), "sub_stc_1", "admin@acme-stc.com"));
         tenantId = response.tenant().id();
         schemaName = response.tenant().schemaName();
+        awaitActiveTenant(tenantId);
 
         tenantLifecycleService.updateStatus(
                 tenantId, new UpdateTenantStatusRequest(TenantStatus.SUSPENDED, "payment_issue"));

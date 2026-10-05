@@ -6,9 +6,8 @@ import dev.achiri.multivault.audit.event.AuditEventPublisher;
 import dev.achiri.multivault.audit.model.ActorType;
 import dev.achiri.multivault.common.exception.RecursoDuplicadoException;
 import dev.achiri.multivault.common.exception.RecursoNoEncontradoException;
-import dev.achiri.multivault.common.exception.TenantProvisioningException;
 import dev.achiri.multivault.common.util.SlugUtils;
-import dev.achiri.multivault.infrastructure.persistence.tenant.TenantSchemaProvisioner;
+import dev.achiri.multivault.infrastructure.async.ProvisioningProperties;
 import dev.achiri.multivault.infrastructure.security.jwt.jwks.JwksProvider;
 import dev.achiri.multivault.plan.model.Plan;
 import dev.achiri.multivault.plan.repository.PlanRepository;
@@ -21,14 +20,12 @@ import dev.achiri.multivault.tenant.mapper.TenantMapper;
 import dev.achiri.multivault.tenant.mapper.TenantMemberMapper;
 import dev.achiri.multivault.tenant.model.Tenant;
 import dev.achiri.multivault.tenant.model.TenantIdentityProvider;
-import dev.achiri.multivault.tenant.provisioning.ActivationResult;
 import dev.achiri.multivault.tenant.provisioning.OnboardingResult;
-import dev.achiri.multivault.tenant.provisioning.TenantProvisioningFailedEvent;
 import dev.achiri.multivault.tenant.provisioning.TenantProvisioningService;
 import dev.achiri.multivault.tenant.repository.TenantIdentityProviderRepository;
 import dev.achiri.multivault.tenant.repository.TenantRepository;
 import lombok.RequiredArgsConstructor;
-import org.springframework.context.ApplicationEventPublisher;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -36,6 +33,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.util.Map;
 import java.util.UUID;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class TenantService {
@@ -44,9 +42,8 @@ public class TenantService {
     private static final int SCHEMA_MAX_LENGTH = 63;
 
     private final TenantProvisioningService tenantProvisioningService;
-    private final TenantSchemaProvisioner tenantSchemaProvisioner;
-    private final ApplicationEventPublisher applicationEventPublisher;
     private final JwksProvider jwksProvider;
+    private final ProvisioningProperties provisioningProperties;
 
     private final PlanRepository planRepository;
     private final TenantRepository tenantRepository;
@@ -58,6 +55,10 @@ public class TenantService {
     private final TenantMemberMapper tenantMemberMapper;
     private final TenantIdentityProviderMapper tenantIdentityProviderMapper;
 
+    /**
+     * El aprovisionamiento asíncrono deja el CREATE SCHEMA y el ciclo de Flyway fuera
+     * del camino del request; ver ADR-0016.
+     */
     public CreateTenantResponse create(CreateTenantRequest request) {
         Plan plan = planRepository.findById(request.planId())
                 .filter(Plan::getIsActive)
@@ -66,17 +67,13 @@ public class TenantService {
         jwksProvider.probe(request.identityProvider().jwksUri());
 
         String schemaName = generateSchemaName(request.name());
-
         OnboardingResult onboarding = initialize(request, plan, schemaName);
-        provisionSchema(onboarding.tenant().getId(), schemaName);
-        ActivationResult activation = tenantProvisioningService.activate(onboarding, plan);
 
-        return new CreateTenantResponse(
-                tenantMapper.toDto(activation.tenant()),
-                subscriptionMapper.toDto(onboarding.subscription(), plan),
-                tenantMemberMapper.toDto(onboarding.admin()),
-                tenantIdentityProviderMapper.toDto(onboarding.identityProvider()),
-                toApiKeyDto(activation.apiKey()));
+        if (provisioningProperties.enabled()) {
+            return enqueueProvisioning(onboarding, plan);
+        }
+        throw new IllegalStateException(
+                "El aprovisionamiento asíncrono es obligatorio; habilita multivault.provisioning.enabled");
     }
 
     private OnboardingResult initialize(CreateTenantRequest request, Plan plan, String schemaName) {
@@ -87,15 +84,18 @@ public class TenantService {
         }
     }
 
-    private void provisionSchema(UUID tenantId, String schemaName) {
-        try {
-            tenantSchemaProvisioner.provision(schemaName);
-        } catch (RuntimeException e) {
-            String reason = "schema_provisioning_failed";
-            tenantProvisioningService.markProvisioningFailed(tenantId, reason);
-            applicationEventPublisher.publishEvent(new TenantProvisioningFailedEvent(tenantId, schemaName, reason));
-            throw new TenantProvisioningException(e);
-        }
+    private CreateTenantResponse enqueueProvisioning(OnboardingResult onboarding, Plan plan) {
+        ApiKeyResult apiKey = tenantProvisioningService.issueInitialCredentialsAndRequestProvisioning(
+                onboarding.tenant().getId(), onboarding.admin().getId(),
+                onboarding.tenant().getSchemaName(), plan.getId());
+        log.info("Tenant {} registrado y encolado para aprovisionamiento asíncrono",
+                onboarding.tenant().getId());
+        return new CreateTenantResponse(
+                tenantMapper.toDto(onboarding.tenant()),
+                subscriptionMapper.toDto(onboarding.subscription(), plan),
+                tenantMemberMapper.toDto(onboarding.admin()),
+                tenantIdentityProviderMapper.toDto(onboarding.identityProvider()),
+                toApiKeyDto(apiKey));
     }
 
     private CreateTenantResponse.ApiKeyDto toApiKeyDto(ApiKeyResult apiKey) {
@@ -121,6 +121,7 @@ public class TenantService {
     @Transactional
     public CreateTenantResponse.TenantIdentityProviderDto updateIdentityProvider(
             UUID tenantId, UpdateTenantIdentityProviderRequest request) {
+
         Tenant tenant = tenantRepository.findById(tenantId)
                 .orElseThrow(() -> new RecursoNoEncontradoException("tenant", tenantId));
 

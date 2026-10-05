@@ -1,6 +1,5 @@
 package dev.achiri.multivault.infrastructure.persistence.tenant.context;
 
-import dev.achiri.multivault.common.exception.RecursoNoEncontradoException;
 import dev.achiri.multivault.tenant.model.Tenant;
 import dev.achiri.multivault.tenant.repository.TenantRepository;
 import lombok.RequiredArgsConstructor;
@@ -14,9 +13,9 @@ public class TenantSchemaResolver {
 
     private final TenantRepository tenantRepository;
 
-    public String resolve(UUID tenantId) {
+    public TenantSchemaRef resolve(UUID tenantId) {
         Tenant tenant = tenantRepository.findById(tenantId)
-                .orElseThrow(() -> new RecursoNoEncontradoException("tenant", tenantId));
-        return tenant.getSchemaName();
+                .orElseThrow(() -> new TenantNoEncontradoException(tenantId));
+        return new TenantSchemaRef(tenant.getSchemaName(), tenant.getStatus());
     }
 }

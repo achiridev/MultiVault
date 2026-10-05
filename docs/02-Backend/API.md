@@ -10,9 +10,15 @@ Implementado: `POST /api/v1/tenants` (creación de organización), `PUT /api/v1/
 
 ### POST `/api/v1/tenants` — Crear organización (implementado)
 
-Crea el tenant con su schema físico: `tenant` (`PENDING_PROVISIONING` → `ACTIVE`), `subscription` (ACTIVE), `tenant_usage`, `tenant_member` (admin), `tenant_identity_provider` (obligatorio), schema PostgreSQL migrado vía Flyway (`db/tenant`) y la API key inicial del admin (raw mostrada una sola vez). `schema_name` se deriva de `name` (`mv_` + slug). Requiere `planId` existente y activo (`404` si no); `201 Created` en éxito; `409` si `schema_name` duplicado; `400` si `name` no genera slug válido. Si el aprovisionamiento del schema falla, el tenant queda `SUSPENDED` y el endpoint responde `500`.
+Crea el tenant y registra sus datos: `tenant` (`PENDING_PROVISIONING`), `subscription` (ACTIVE), `tenant_usage`, `tenant_member` (admin), `tenant_identity_provider` (obligatorio) y la API key inicial del admin (raw mostrada una sola vez). El schema PostgreSQL migrado vía Flyway (`db/tenant`) y el paso a `ACTIVE` los hace un worker asíncrono (ADR-0016), no el request. `schema_name` se deriva de `name` (`mv_` + slug).
+
+Requiere `planId` existente y activo (`404` si no). `202 Accepted` en éxito; `409` si `schema_name` duplicado; `400` si `name` no genera slug válido; `429` si se excede el rate limit por IP o el corte global; `400`/`422`/`409` según el `Idempotency-Key` (ver abajo). Si el aprovisionamiento del schema agota sus reintentos, el tenant queda `SUSPENDED` y el job va a un stream de dead letter.
+
+Como el tenant existe pero su schema todavía no, cualquier llamada autenticada a un tenant en `PENDING_PROVISIONING` responde **`409` con `Retry-After: 2`**. Ese `409` es la señal de polling: el cliente reintenta su llamada hasta que el worker termine.
 
 `identityProvider.jwksUri` se valida **antes de cualquier escritura** (ADR-0015): debe ser `https`, sin credenciales embebidas ni fragmento, longitud ≤ 500, puerto en `allowed-ports` (default `443`), apuntar a una IP pública (se rechazan loopback, site-local, link-local, multicast, CGNAT, ULA, IPv4-mapped y los sufijos `.localhost`/`.local`/`.internal`) y devolver un JWKS con al menos una clave RSA utilizable. Un rechazo devuelve `400` y **no** deja tenant, schema ni fila de `tenant_identity_provider`: el motivo del fallo es la URL, no la provisión. Los fallos de alcance y de contenido comparten un único mensaje (`jwks_uri rechazada: no alcanzable o sin un JWKS válido`) para no exponer un oráculo de estados a un llamante anónimo (este endpoint es público).
+
+El probe se mantiene **sincrónico** a propósito (ADR-0016): conserva el contrato de error de ADR-0015 y el coste dominante era Flyway, no el GET.
 
 Request:
 ```json
@@ -32,10 +38,10 @@ Request:
 
 `admin.displayName` opcional; `identityProvider` **obligatorio** (`audience` obligatorio); `allowedAlgorithms` (default `RS256`) y `clockSkewSeconds` (default `60`) opcionales con override.
 
-Response `201 Created`:
+Response `202 Accepted`:
 ```json
 {
-  "tenant": { "id": "...", "name": "Acme Inc", "schemaName": "mv_acme_inc", "status": "ACTIVE" },
+  "tenant": { "id": "...", "name": "Acme Inc", "schemaName": "mv_acme_inc", "status": "PENDING_PROVISIONING" },
   "subscription": { "id": "...", "planId": "...", "planCode": "PRO", "status": "ACTIVE" },
   "admin": { "memberId": "...", "subject": "sub_123", "email": "admin@acme.com", "displayName": "Jane Doe" },
   "identityProvider": { "issuer": "...", "jwksUri": "...", "audience": "...", "allowedAlgorithms": ["RS256"], "clockSkewSeconds": 90 },
@@ -43,7 +49,51 @@ Response `201 Created`:
 }
 ```
 
-`apiKey.key` es la key raw y se devuelve **una única vez**; solo el hash (`key_hash`) se almacena en BD.
+`apiKey.key` es la key raw y se devuelve **una única vez**; solo el hash (`key_hash`) se almacena en BD. La key autentica desde el primer momento, aunque el schema aún no exista.
+
+### Rate limiting (ADR-0016)
+
+Todo `/api/**` está sujeto a rate limiting. Los límites son configurables en `multivault.ratelimit.rules`; los valores por defecto:
+
+| Regla | Patrón | Alcance | Límite |
+|---|---|---|---|
+| `onboarding` | `POST /api/v1/tenants` | IP | 3 / hora |
+| `onboarding-global` | `POST /api/v1/tenants` | global | 200 / hora |
+| `api-default` | `/api/**` | IP | 300 / min |
+
+El corte global es un circuit breaker de la aplicación: por más que se roten IPs, no se crean más de 200 tenants por hora.
+
+Respuesta `429` con `ErrorResponse` JSON y headers:
+
+```
+Retry-After: 3600
+RateLimit-Limit: 3
+RateLimit-Remaining: 0
+RateLimit-Reset: 3600
+```
+
+Si Redis no está disponible, el límite degrada a un bucket en memoria **por instancia**
+(`fail-mode: CLOSED`): el servicio nunca queda sin límite. Con `fail-mode: OPEN` el tráfico
+se deixa pasar sin limitación y el corte global deja de ser un límite de coste.
+
+### Idempotency-Key (ADR-0016)
+
+Header opcional `Idempotency-Key: <uuid>` en `POST /api/v1/tenants`. La clave se guarda en
+Redis junto a un fingerprint `SHA-256(método + ruta + SHA-256(body))`.
+
+| Situación | Respuesta |
+|---|---|
+| Clave nueva | Se procesa; la respuesta `2xx` se guarda 24 h |
+| Reenvío con la misma clave y el mismo cuerpo | La respuesta guardada + header `Idempotency-Replayed: true` |
+| Reenvío con la misma clave y otro cuerpo | `422` |
+| Petición con la misma clave todavía en curso | `409` con `Retry-After: 2` |
+| Clave que no es un UUID, o > 64 chars | `400` |
+| Cuerpo > `multivault.idempotency.max-body-bytes` (16 KiB) | `413` |
+
+Solo se guardan respuestas `2xx`; un `4xx`/`5xx` libera la clave para que el cliente pueda
+reintentar tras corregir. La garantía de no duplicar un tenant es la restricción `UNIQUE`
+de `schema_name`: si la clave expira mientras el aprovisionamiento corre, el segundo request
+choca con ella.
 
 ## Autenticación
 
@@ -53,6 +103,10 @@ Todos los endpoints excepto `POST /api/v1/tenants` requieren autenticación.
 - **Miembro humano (STANDARD + JWT):** el JWT viaja en `Authorization: Bearer` y la key STANDARD en `X-API-Key`. El JWT **nunca autentica solo** (ADR-0011): sin key STANDARD del mismo tenant → `401`. Un futuro JWT de platform_user usará su propio mecanismo.
 
 `ApiKeyAuthenticationFilter` distingue la key del JWT por el prefijo `mv_live_`. Key inválida/revocada/expirada o falta de credenciales → `401` con `ErrorResponse` JSON. La autorización por endpoint la define cada controller con `@PreAuthorize` sobre el scope de la key (`SCOPE_<scope>`, ver Autenticacion.md); scope insuficiente → `403`.
+
+Un tenant que no está `ACTIVE` (`PENDING_PROVISIONING`, `SUSPENDED` o `CANCELLED`) responde **`409` con `Retry-After: 2`** antes de llegar al controlador. La comprobación es gratuita: `TenantSchemaResolver` ya leía la fila del tenant en cada request autenticado.
+
+La IP que se registra en `audit_log` y la que se usa como clave de rate limiting se resuelven con `TrustedProxyClientIpResolver`: `X-Forwarded-For` solo se honra si el peer inmediato está en `multivault.client-ip.trusted-proxies`, y se toma la entrada no confiable más a la derecha.
 
 Scopes requeridos por los endpoints implementados:
 
@@ -190,7 +244,7 @@ Existen controladores REST (`TenantController` en `/api/v1/tenants`) sobre Servl
 #### Tenant Management
 | Método | Path | Descripción |
 |---|---|---|
-| POST | `/api/v1/tenants` | Crear nuevo tenant |
+| POST | `/api/v1/tenants` | ✅ Crear nuevo tenant (`202` + aprovisionamiento asíncrono, ADR-0016) |
 | PUT | `/api/v1/tenants/identity-provider` | ✅ Actualizar identity provider (solo SERVICE, ADR-0012) |
 | PUT | `/api/v1/tenants/status` | ✅ Actualizar estado (cancel/suspend/reinstate; solo SERVICE, ADR-0012) |
 | GET | `/api/v1/tenants/{id}` | Obtener tenant |

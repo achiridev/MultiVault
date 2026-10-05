@@ -8,6 +8,30 @@ storage:
     enabled: false
 
 multivault:
+  ratelimit:
+    key-salt: test-salt
+    rules:
+      - id: onboarding
+        match: ["POST:/api/v1/tenants"]
+        scopes: [IP, GLOBAL]
+        spec:
+          capacity: 10000
+          refill-tokens: 10000
+          refill-period: PT1H
+      - id: onboarding-global
+        match: ["POST:/api/v1/tenants"]
+        scopes: [GLOBAL]
+        spec:
+          capacity: 10000
+          refill-tokens: 10000
+          refill-period: PT1H
+      - id: api-default
+        match: ["/api/**"]
+        scopes: [IP]
+        spec:
+          capacity: 10000
+          refill-tokens: 10000
+          refill-period: PT1M
   jwks:
     allow-http: true
     allow-private-hosts: true
