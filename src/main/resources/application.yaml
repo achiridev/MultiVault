@@ -47,6 +47,8 @@ storage:
     bucket: ${B2_BUCKET:}
 
 multivault:
+  client-ip:
+    trusted-proxies: ${RL_TRUSTED_PROXIES:}
   upload:
     max-size-bytes: ${UPLOAD_MAX_SIZE_BYTES:104857600}
     allowed-mime-types: ${UPLOAD_ALLOWED_MIME_TYPES:application/pdf,text/plain,text/csv,image/png,image/jpeg,image/webp,image/gif,application/json,application/zip,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.openxmlformats-officedocument.presentationml.presentation}

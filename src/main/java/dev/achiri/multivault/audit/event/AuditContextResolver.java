@@ -3,16 +3,19 @@ package dev.achiri.multivault.audit.event;
 import dev.achiri.multivault.audit.model.ActorType;
 import dev.achiri.multivault.infrastructure.security.apikey.ApiKeyPrincipal;
 import dev.achiri.multivault.infrastructure.security.jwt.model.TenantUserPrincipal;
+import dev.achiri.multivault.infrastructure.web.ClientIpResolver;
 import jakarta.servlet.http.HttpServletRequest;
+import lombok.RequiredArgsConstructor;
 import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Component;
 
-import java.net.InetAddress;
-import java.net.UnknownHostException;
 import java.util.UUID;
 
 @Component
+@RequiredArgsConstructor
 public class AuditContextResolver {
+
+    private final ClientIpResolver clientIpResolver;
 
     public AuditContext resolve(UUID bodyUserId, Authentication authentication, HttpServletRequest request) {
         if (authentication != null && authentication.getPrincipal() instanceof TenantUserPrincipal tenantUser) {
@@ -21,7 +24,7 @@ public class AuditContextResolver {
                     tenantUser.memberId(),
                     null,
                     ActorType.TENANT_USER,
-                    ipAddress(request),
+                    clientIpResolver.resolve(request).orElse(null),
                     request.getHeader("User-Agent"));
         }
         if (authentication != null && authentication.getPrincipal() instanceof ApiKeyPrincipal apiKey) {
@@ -33,18 +36,11 @@ public class AuditContextResolver {
                     bodyUserId,
                     apiKey.keyId(),
                     ActorType.API_KEY,
-                    ipAddress(request),
+                    clientIpResolver.resolve(request).orElse(null),
                     request.getHeader("User-Agent"));
         }
-        return new AuditContext(null, null, null, ActorType.SYSTEM, ipAddress(request),
+        return new AuditContext(null, null, null, ActorType.SYSTEM,
+                clientIpResolver.resolve(request).orElse(null),
                 request.getHeader("User-Agent"));
-    }
-
-    private InetAddress ipAddress(HttpServletRequest request) {
-        try {
-            return InetAddress.getByName(request.getRemoteAddr());
-        } catch (UnknownHostException e) {
-            return null;
-        }
     }
 }
