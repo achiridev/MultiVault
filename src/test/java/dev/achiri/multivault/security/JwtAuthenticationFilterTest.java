@@ -7,7 +7,7 @@ import dev.achiri.multivault.infrastructure.security.apikey.ApiKeyIdentity;
 import dev.achiri.multivault.infrastructure.security.apikey.ApiKeyPrincipal;
 import dev.achiri.multivault.infrastructure.security.jwt.JwtAuthenticationFilter;
 import dev.achiri.multivault.infrastructure.security.jwt.MultiIssuerJwtDecoder;
-import dev.achiri.multivault.infrastructure.security.jwt.exception.InvalidJwtException;
+import dev.achiri.multivault.common.exception.InvalidJwtException;
 import dev.achiri.multivault.infrastructure.security.jwt.model.TenantUserPrincipal;
 import dev.achiri.multivault.infrastructure.security.jwt.model.ValidatedJwt;
 import dev.achiri.multivault.tenant.model.TenantMember;

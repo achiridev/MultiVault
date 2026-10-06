@@ -1,4 +1,4 @@
-package dev.achiri.multivault.infrastructure.security.jwt.exception;
+package dev.achiri.multivault.common.exception;
 
 public class InvalidJwtException extends RuntimeException {
 

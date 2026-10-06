@@ -2,8 +2,8 @@ package dev.achiri.multivault.infrastructure.security.jwt;
 
 import dev.achiri.multivault.common.exception.JwksUriInvalidaException;
 import dev.achiri.multivault.infrastructure.security.codec.JwtJackson3Deserializer;
-import dev.achiri.multivault.infrastructure.security.jwt.exception.InvalidJwtException;
-import dev.achiri.multivault.infrastructure.security.jwt.exception.UnknownKeyException;
+import dev.achiri.multivault.common.exception.InvalidJwtException;
+import dev.achiri.multivault.common.exception.UnknownKeyException;
 import dev.achiri.multivault.infrastructure.security.jwt.jwks.JwkEntry;
 import dev.achiri.multivault.infrastructure.security.jwt.jwks.JwksProvider;
 import dev.achiri.multivault.infrastructure.security.jwt.model.ValidatedJwt;
