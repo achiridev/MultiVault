@@ -27,10 +27,15 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
         "multivault.ratelimit.rules[0].id=onboarding",
         "multivault.ratelimit.rules[0].match[0]=POST:/api/v1/tenants",
         "multivault.ratelimit.rules[0].scopes[0]=IP",
-        "multivault.ratelimit.rules[0].scopes[1]=GLOBAL",
         "multivault.ratelimit.rules[0].spec.capacity=3",
         "multivault.ratelimit.rules[0].spec.refill-tokens=3",
-        "multivault.ratelimit.rules[0].spec.refill-period=PT1H"
+        "multivault.ratelimit.rules[0].spec.refill-period=PT1H",
+        "multivault.ratelimit.rules[1].id=onboarding-global",
+        "multivault.ratelimit.rules[1].match[0]=POST:/api/v1/tenants",
+        "multivault.ratelimit.rules[1].scopes[0]=GLOBAL",
+        "multivault.ratelimit.rules[1].spec.capacity=1000",
+        "multivault.ratelimit.rules[1].spec.refill-tokens=1000",
+        "multivault.ratelimit.rules[1].spec.refill-period=PT1H"
 })
 class TenantOnboardingAbuseTest extends BaseIntegrationTest {
 
@@ -137,6 +142,23 @@ class TenantOnboardingAbuseTest extends BaseIntegrationTest {
         ids.forEach(this::awaitActiveTenant);
 
         assertThat(schemasCreated()).isEqualTo(3);
+    }
+
+    @Test
+    void rotatingAddressesDoNotShareThePerIpBucket() throws Exception {
+        var ids = new java.util.ArrayList<UUID>();
+        for (int address = 1; address <= 6; address++) {
+            var response = mockMvc.perform(post("/api/v1/tenants")
+                            .remoteAddress("203.0.113." + address)
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(body()))
+                    .andExpect(status().is2xxSuccessful())
+                    .andReturn().getResponse();
+            ids.add(UUID.fromString(tenantIdOf(response.getContentAsString())));
+        }
+        ids.forEach(this::awaitActiveTenant);
+
+        assertThat(schemasCreated()).isEqualTo(6);
     }
 
     private String tenantIdOf(String body) {

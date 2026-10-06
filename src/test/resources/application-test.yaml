@@ -13,7 +13,7 @@ multivault:
     rules:
       - id: onboarding
         match: ["POST:/api/v1/tenants"]
-        scopes: [IP, GLOBAL]
+        scopes: [IP]
         spec:
           capacity: 10000
           refill-tokens: 10000

@@ -26,8 +26,8 @@ public class RateLimitRuleMatcher {
         return rules;
     }
 
-    public Optional<RateLimitRule> find(HttpServletRequest request) {
-        return rules.stream().filter(rule -> rule.matches(request)).findFirst();
+    public List<RateLimitRule> findAll(HttpServletRequest request) {
+        return rules.stream().filter(rule -> rule.matches(request)).toList();
     }
 
     private static RateLimitRule toRule(RateLimitProperties.Rule rule) {

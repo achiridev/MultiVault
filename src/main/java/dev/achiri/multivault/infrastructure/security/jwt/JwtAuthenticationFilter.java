@@ -3,7 +3,7 @@ package dev.achiri.multivault.infrastructure.security.jwt;
 import dev.achiri.multivault.infrastructure.security.ScopeAuthorities;
 import dev.achiri.multivault.infrastructure.security.apikey.ApiKeyAuthenticationFilter;
 import dev.achiri.multivault.infrastructure.security.apikey.ApiKeyIdentity;
-import dev.achiri.multivault.infrastructure.security.jwt.exception.InvalidJwtException;
+import dev.achiri.multivault.common.exception.InvalidJwtException;
 import dev.achiri.multivault.infrastructure.security.jwt.model.TenantUserPrincipal;
 import dev.achiri.multivault.infrastructure.security.jwt.model.ValidatedJwt;
 import dev.achiri.multivault.tenant.model.TenantMember;
