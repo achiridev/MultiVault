@@ -19,26 +19,26 @@ class RateLimitRuleMatcherTest {
     void matchesOnMethodAndPath() {
         RateLimitRuleMatcher matcher = matcherWith(rule("onboarding", List.of("POST:/api/v1/tenants")));
 
-        assertThat(matcher.find(post("/api/v1/tenants"))).isPresent();
-        assertThat(matcher.find(get("/api/v1/tenants"))).isEmpty();
+        assertThat(matcher.findAll(post("/api/v1/tenants"))).hasSize(1);
+        assertThat(matcher.findAll(get("/api/v1/tenants"))).isEmpty();
     }
 
     @Test
     void matchesPathOnlyWhenNoMethodIsDeclared() {
         RateLimitRuleMatcher matcher = matcherWith(rule("api-default", List.of("/api/**")));
 
-        assertThat(matcher.find(post("/api/v1/documents"))).isPresent();
-        assertThat(matcher.find(get("/api/v1/documents/abc"))).isPresent();
-        assertThat(matcher.find(get("/actuator/health"))).isEmpty();
+        assertThat(matcher.findAll(post("/api/v1/documents"))).hasSize(1);
+        assertThat(matcher.findAll(get("/api/v1/documents/abc"))).hasSize(1);
+        assertThat(matcher.findAll(get("/actuator/health"))).isEmpty();
     }
 
     @Test
     void matchesAnyOfSeveralMethods() {
         RateLimitRuleMatcher matcher = matcherWith(rule("tenant-write", List.of("PUT,POST:/api/v1/tenants/**")));
 
-        assertThat(matcher.find(put("/api/v1/tenants/status"))).isPresent();
-        assertThat(matcher.find(post("/api/v1/tenants/identity-provider"))).isPresent();
-        assertThat(matcher.find(get("/api/v1/tenants/status"))).isEmpty();
+        assertThat(matcher.findAll(put("/api/v1/tenants/status"))).hasSize(1);
+        assertThat(matcher.findAll(post("/api/v1/tenants/identity-provider"))).hasSize(1);
+        assertThat(matcher.findAll(get("/api/v1/tenants/status"))).isEmpty();
     }
 
     @Test
@@ -46,24 +46,28 @@ class RateLimitRuleMatcherTest {
         RateLimitRuleMatcher matcher = matcherWith(
                 rule("mixed", List.of("GET:/api/v1/documents/*", "POST:/api/v1/documents")));
 
-        assertThat(matcher.find(get("/api/v1/documents/abc"))).isPresent();
-        assertThat(matcher.find(post("/api/v1/documents"))).isPresent();
+        assertThat(matcher.findAll(get("/api/v1/documents/abc"))).hasSize(1);
+        assertThat(matcher.findAll(post("/api/v1/documents"))).hasSize(1);
     }
 
     @Test
-    void returnsTheFirstMatchingRule() {
+    void returnsEveryMatchingRuleInDeclarationOrder() {
         RateLimitRuleMatcher matcher = matcherWith(
-                rule("first", List.of("POST:/api/v1/tenants")),
-                rule("second", List.of("/api/**")));
+                rule("onboarding", List.of("POST:/api/v1/tenants"), List.of("IP")),
+                rule("onboarding-global", List.of("POST:/api/v1/tenants"), List.of("GLOBAL")),
+                rule("api-default", List.of("/api/**")));
 
-        assertThat(matcher.find(post("/api/v1/tenants"))).map(RateLimitRule::id).contains("first");
+        assertThat(matcher.findAll(post("/api/v1/tenants"))).map(RateLimitRule::id)
+                .containsExactly("onboarding", "onboarding-global", "api-default");
+        assertThat(matcher.findAll(get("/api/v1/documents"))).map(RateLimitRule::id)
+                .containsExactly("api-default");
     }
 
     @Test
     void parsesScopesIgnoringCaseAndSpaces() {
         RateLimitRuleMatcher matcher = matcherWith(rule("scoped", List.of("/api/**"), List.of(" ip ", "GLOBAL")));
 
-        assertThat(matcher.find(get("/api/x"))).map(RateLimitRule::scopes)
+        assertThat(matcher.findAll(get("/api/x"))).map(RateLimitRule::scopes)
                 .contains(List.of(RateLimitScope.IP, RateLimitScope.GLOBAL));
     }
 

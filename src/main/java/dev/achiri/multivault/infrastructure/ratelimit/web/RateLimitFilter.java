@@ -17,6 +17,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
+import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 
@@ -40,16 +41,15 @@ public class RateLimitFilter extends OncePerRequestFilter {
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain filterChain)
             throws ServletException, IOException {
 
-        Optional<RateLimitRule> matched = ruleMatcher.find(request)
-                .filter(rule -> rule.scopes().stream().anyMatch(handledScopes::contains));
-        if (matched.isEmpty()) {
-            filterChain.doFilter(request, response);
-            return;
-        }
-        Optional<RateLimitDecision> rejection = decide(request, matched.get());
-        if (rejection.isPresent()) {
-            reject(request, response, rejection.get());
-            return;
+        List<RateLimitRule> matched = ruleMatcher.findAll(request).stream()
+                .filter(rule -> rule.scopes().stream().anyMatch(handledScopes::contains))
+                .toList();
+        for (RateLimitRule rule : matched) {
+            Optional<RateLimitDecision> rejection = decide(request, rule);
+            if (rejection.isPresent()) {
+                reject(request, response, rejection.get());
+                return;
+            }
         }
         filterChain.doFilter(request, response);
     }
