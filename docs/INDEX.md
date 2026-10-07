@@ -66,6 +66,7 @@ Punto de entrada único. Lee este archivo primero, luego los documentos relevant
 | [ADR-0014](06-Decisiones/ADR-0014.md) | Resolución estricta de clave JWKS por `kid` (sin fallback a la primera clave) |
 | [ADR-0015](06-Decisiones/ADR-0015.md) | Validación de `jwks_uri` en provisioning y defensa anti-SSRF en el fetch |
 | [ADR-0016](06-Decisiones/ADR-0016.md) | Control de abuso del onboarding: rate limit por IP, idempotencia y aprovisionamiento asíncrono |
+| [ADR-0017](06-Decisiones/ADR-0017.md) | El actor de una escritura se referencia por el `subject` del IdP, no por un UUID libre |
 
 ## 99-Templates
 

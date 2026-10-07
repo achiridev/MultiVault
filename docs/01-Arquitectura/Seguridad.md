@@ -61,6 +61,16 @@ El `audit_log` está diseñado como insert-only. La nota en el schema indica que
 
 El paquete `dev.achiri.multivault.audit` implementa la auditoría con eventos de aplicación (ver ADR-0003): los servicios publican `AuditEvent` vía `AuditEventPublisher` y el listener persiste en `audit_log` solo cuando la transacción de negocio commiteó (`AFTER_COMMIT` + `REQUIRES_NEW`). El log queda así desacoplado del negocio y no revierte operaciones por fallos de auditoría.
 
+### Integridad de la atribución del actor
+
+`document.owner_user_id`, `document_permission.user_id`, `document_version.created_by` y `audit_log.actor_user_id` no tienen FK a propósito (la identidad vive fuera del servicio), así que nada en la base de datos impide escribir un id que no corresponde a nadie. La validación vive en el boundary de la API, en `AuditContextResolver`, que es el único punto por el que se construye el `AuditContext` de una escritura ([ADR-0017](../06-Decisiones/ADR-0017.md)):
+
+- Con JWT, el actor es el `memberId` del principal. El `JwtAuthenticationFilter` ya hizo el `upsert` del miembro antes de que el controller resuelva argumentos, así que la existencia del miembro es una garantía estructural y no necesita comprobarse.
+- Con API key `SERVICE`, el actor se referencia por el claim `sub` del IdP del tenant (`ownerSubject`), que se resuelve con `TenantMemberService.upsert(tenantId, subject, ...)`. Como el índice único es `(tenant_id, subject)`, la resolución ocurre dentro del namespace del tenant del caller: es imposible que una atribución apunte a un `tenant_member` de otro tenant.
+- Un miembro `is_active = false` (tenant suspendido o cancelado, que es lo que hace `TenantLifecycleService`) se rechaza con `MiembroInvalidoException` → `400`.
+
+La consecuencia asumida es que la key SERVICE puede **crear** identidades: un `ownerSubject` desconocido materializa un `tenant_member`. Es coherente con el nivel de confianza que ya tiene (scope `*`, administra el IdP y el estado del tenant), pero implica que `tenant_member` no distingue una identidad probada por un login de una asertada por un proceso. Ver "Lo que este ADR no decide" en ADR-0017.
+
 ### Soft deletes
 
 - `folder.deleted_at` — borrado lógico de carpetas (no purge programado)
@@ -86,6 +96,7 @@ El paquete `dev.achiri.multivault.audit` implementa la auditoría con eventos de
 - [ ] Implementar rate limiting por tenant y por API key (`max_requests_per_minute` del plan sigue sin enforcement)
 - [ ] Aplicar REVOKE a nivel de base de datos para `audit_log`
 - [x] Implementar infraestructura de auditoría de eventos (paquete `audit/` + ADR-0003) — falta cubrir eventos específicos de seguridad (logins fallidos, keys revocadas)
+- [x] Validar la atribución del actor en el boundary (claim `sub` del IdP con credencial SERVICE, `MiembroInvalidoException` si está inactivo) — ADR-0017
 - [ ] Definir política de contraseñas para platform_user
 - [ ] Configurar HTTPS/TLS
 - [ ] Proteger el egress con allowlist de destinos (cierra el DNS rebinding que deja abierto la validación de `jwks_uri`)
@@ -100,3 +111,5 @@ El paquete `dev.achiri.multivault.audit` implementa la auditoría con eventos de
 - ¿Hay requerimientos de Data Residency / GDPR?
 - ~~¿Se aplica rate limiting a `POST /api/v1/tenants`?~~ **Resuelto por [ADR-0016](../06-Decisiones/ADR-0016.md)**: 3 tenants/hora por IP con corte global de 200/hora, `Idempotency-Key` y aprovisionamiento asíncrono, así que el request anónimo ya no paga `CREATE SCHEMA` ni Flyway.
 - ¿Se aplica un límite por tenant y por API key a partir de `plan.max_requests_per_minute`? La columna está sembrada desde `V2__plan_seed.sql` (FREE 60, PRO 1000, BUSINESS 3000, ENTERPRISE 6000) pero nadie la lee. La decisión de no meter una lectura de `plan` en el camino caliente está en ADR-0016.
+- ~~¿Cómo se evita que una escritura quede atribuida a un id inexistente o a un miembro de otro tenant?~~ **Resuelto por [ADR-0017](../06-Decisiones/ADR-0017.md)**: el actor se referencia por el claim `sub` del IdP y se resuelve dentro del tenant del caller. Hereda una pregunta abierta: cómo distinguir en el log una identidad probada por un login de una asertada por una credencial SERVICE (ver "Lo que este ADR no decide").
+- ¿Quién puede compartir documentos con personas fuera del tenant, y con qué credencial se atribuyen esas escrituras? Hoy no existe compartir con externos: solo usuarios del IdP del propio tenant. Cuando exista, las filas `tenant_member` creadas por invitación nacen sin verificación de identidad, y ese es el punto donde una columna de estado (p. ej. `verified_at`) tendría su primer consumidor real.
