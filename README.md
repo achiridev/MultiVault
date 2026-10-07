@@ -382,7 +382,7 @@ Full project documentation is available in the [`docs/`](docs/INDEX.md) director
 - [Security Considerations](docs/01-Arquitectura/Seguridad.md)
 - [API Reference](docs/02-Backend/API.md)
 - [Database Schema](docs/02-Backend/BaseDatos.md)
-- [Architecture Decision Records](docs/06-Decisiones/) — 13 ADRs documenting key technical decisions
+- [Architecture Decision Records](docs/06-Decisiones/) — 18 ADRs documenting key technical and product decisions
 
 ## License
 

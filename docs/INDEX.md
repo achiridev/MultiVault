@@ -67,6 +67,7 @@ Punto de entrada único. Lee este archivo primero, luego los documentos relevant
 | [ADR-0015](06-Decisiones/ADR-0015.md) | Validación de `jwks_uri` en provisioning y defensa anti-SSRF en el fetch |
 | [ADR-0016](06-Decisiones/ADR-0016.md) | Control de abuso del onboarding: rate limit por IP, idempotencia y aprovisionamiento asíncrono |
 | [ADR-0017](06-Decisiones/ADR-0017.md) | El actor de una escritura se referencia por el `subject` del IdP, no por un UUID libre |
+| [ADR-0018](06-Decisiones/ADR-0018.md) | Posicionamiento y modelo de identidad |
 
 ## 99-Templates
 
