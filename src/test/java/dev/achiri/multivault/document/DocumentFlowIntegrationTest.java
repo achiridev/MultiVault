@@ -103,7 +103,7 @@ class DocumentFlowIntegrationTest extends BaseIntegrationTest {
         CreateTenantResponse tenant = createTenant("Acme Docs", "sub_docs_a");
         String schema = tenant.tenant().schemaName();
         String serviceKey = createServiceKey();
-        UUID ownerUserId = UUID.randomUUID();
+        UUID ownerUserId = tenant.admin().memberId();
 
         MockMultipartFile file = new MockMultipartFile(
                 "file", "Contract.pdf", "application/pdf", "test content".getBytes());
@@ -113,7 +113,7 @@ class DocumentFlowIntegrationTest extends BaseIntegrationTest {
                         .header(AUTHORIZATION, "Bearer " + serviceKey)
                         .param("name", "Contract.pdf")
                         .param("mimeType", "application/pdf")
-                        .param("ownerUserId", ownerUserId.toString()))
+                        .param("ownerSubject", tenant.admin().subject()))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.name").value("Contract.pdf"))
                 .andExpect(jsonPath("$.status").value("ACTIVE"))
@@ -170,7 +170,7 @@ class DocumentFlowIntegrationTest extends BaseIntegrationTest {
         CreateTenantResponse tenant = createTenant("Acme Versions", "sub_docs_v");
         String schema = tenant.tenant().schemaName();
         String serviceKey = createServiceKey();
-        UUID ownerUserId = UUID.randomUUID();
+        UUID ownerUserId = tenant.admin().memberId();
 
         MockMultipartFile file = new MockMultipartFile(
                 "file", "Draft.pdf", "application/pdf", "draft v1".getBytes());
@@ -180,7 +180,7 @@ class DocumentFlowIntegrationTest extends BaseIntegrationTest {
                         .header(AUTHORIZATION, "Bearer " + serviceKey)
                         .param("name", "Draft.pdf")
                         .param("mimeType", "application/pdf")
-                        .param("ownerUserId", ownerUserId.toString()))
+                        .param("ownerSubject", tenant.admin().subject()))
                 .andExpect(status().isCreated())
                 .andReturn();
         UUID documentId = UUID.fromString(body(createResult).get("id").asText());
@@ -194,7 +194,7 @@ class DocumentFlowIntegrationTest extends BaseIntegrationTest {
                         .header(AUTHORIZATION, "Bearer " + serviceKey)
                         .param("name", "Draft_v2.pdf")
                         .param("mimeType", "application/pdf")
-                        .param("ownerUserId", ownerUserId.toString()))
+                        .param("ownerSubject", tenant.admin().subject()))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.versionNumber").value(2))
                 .andExpect(jsonPath("$.name").value("Draft_v2.pdf"))
@@ -244,7 +244,7 @@ class DocumentFlowIntegrationTest extends BaseIntegrationTest {
         String keyA = createServiceKey();
         createTenant("Acme Scope B", "sub_scope_b");
         String keyB = createServiceKey();
-        UUID ownerUserId = UUID.randomUUID();
+        String ownerSubject = "sub_service_actor";
 
         MockMultipartFile file = new MockMultipartFile(
                 "file", "Secret.pdf", "application/pdf", "secret content".getBytes());
@@ -254,7 +254,7 @@ class DocumentFlowIntegrationTest extends BaseIntegrationTest {
                         .header(AUTHORIZATION, "Bearer " + keyA)
                         .param("name", "Secret.pdf")
                         .param("mimeType", "application/pdf")
-                        .param("ownerUserId", ownerUserId.toString()))
+                        .param("ownerSubject", ownerSubject))
                 .andExpect(status().isCreated())
                 .andReturn();
         UUID documentId = UUID.fromString(body(createResult).get("id").asText());
@@ -275,7 +275,7 @@ class DocumentFlowIntegrationTest extends BaseIntegrationTest {
     }
 
     @Test
-    void requiresOwnerUserIdForServiceKey() throws Exception {
+    void requiresOwnerSubjectForServiceKey() throws Exception {
         createTenant("Acme No Owner", "sub_no_owner");
         String serviceKey = createServiceKey();
 
@@ -291,13 +291,113 @@ class DocumentFlowIntegrationTest extends BaseIntegrationTest {
     }
 
     @Test
+    void createsMemberForSubjectThatNeverLoggedIn() throws Exception {
+        doNothing().when(documentStorageService).upload(anyString(), any(), anyString(), anyLong());
+
+        CreateTenantResponse tenant = createTenant("Acme Jit", "sub_jit_admin");
+        String schema = tenant.tenant().schemaName();
+        String serviceKey = createServiceKey();
+
+        MockMultipartFile file = new MockMultipartFile(
+                "file", "Imported.pdf", "application/pdf", "content".getBytes());
+
+        MvcResult result = mockMvc.perform(multipart("/api/v1/documents")
+                        .file(file)
+                        .header(AUTHORIZATION, "Bearer " + serviceKey)
+                        .param("name", "Imported.pdf")
+                        .param("mimeType", "application/pdf")
+                        .param("ownerSubject", "sub_never_logged_in")
+                        .param("ownerEmail", "nuevo@acme.com"))
+                .andExpect(status().isCreated())
+                .andReturn();
+        UUID documentId = UUID.fromString(body(result).get("id").asText());
+
+        UUID ownerId = jdbcTemplate.queryForObject(
+                "SELECT owner_user_id FROM " + schema + ".document WHERE id = ?",
+                UUID.class, documentId);
+
+        assertThat(ownerId).isNotNull().isNotEqualTo(tenant.admin().memberId());
+
+        List<Map<String, Object>> members = jdbcTemplate.queryForList(
+                "SELECT id, email, is_active FROM public.tenant_member WHERE tenant_id = ? AND subject = ?",
+                tenant.tenant().id(), "sub_never_logged_in");
+        assertThat(members).hasSize(1);
+        assertThat(members.getFirst().get("id")).isEqualTo(ownerId);
+        assertThat(members.getFirst().get("email")).isEqualTo("nuevo@acme.com");
+
+        Integer ownerPermission = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM " + schema + ".document_permission "
+                        + "WHERE document_id = ? AND user_id = ? AND permission_level = 'OWNER'",
+                Integer.class, documentId, ownerId);
+        assertThat(ownerPermission).isEqualTo(1);
+    }
+
+    @Test
+    void resolvesSubjectInsideCallerTenantOnly() throws Exception {
+        doNothing().when(documentStorageService).upload(anyString(), any(), anyString(), anyLong());
+
+        CreateTenantResponse tenantA = createTenant("Acme Shared A", "sub_shared_a");
+        String keyA = createServiceKey();
+        CreateTenantResponse tenantB = createTenant("Acme Shared B", "sub_shared_b");
+        String keyB = createServiceKey();
+
+        UUID ownerInA = uploadWithSubject(keyA, "ColisionA.pdf", "sub_colision");
+        UUID ownerInB = uploadWithSubject(keyB, "ColisionB.pdf", "sub_colision");
+
+        assertThat(ownerInA).isNotNull().isNotEqualTo(ownerInB);
+        assertThat(memberId(tenantA.tenant().id(), "sub_colision")).isEqualTo(ownerInA);
+        assertThat(memberId(tenantB.tenant().id(), "sub_colision")).isEqualTo(ownerInB);
+    }
+
+    @Test
+    void rejectsInactiveMemberForServiceKey() throws Exception {
+        doNothing().when(documentStorageService).upload(anyString(), any(), anyString(), anyLong());
+
+        CreateTenantResponse tenant = createTenant("Acme Inactive", "sub_inactive");
+        String serviceKey = createServiceKey();
+        jdbcTemplate.update(
+                "UPDATE public.tenant_member SET is_active = false WHERE tenant_id = ?",
+                tenant.tenant().id());
+
+        MockMultipartFile file = new MockMultipartFile(
+                "file", "Blocked.pdf", "application/pdf", "content".getBytes());
+
+        mockMvc.perform(multipart("/api/v1/documents")
+                        .file(file)
+                        .header(AUTHORIZATION, "Bearer " + serviceKey)
+                        .param("name", "Blocked.pdf")
+                        .param("mimeType", "application/pdf")
+                        .param("ownerSubject", "sub_inactive"))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void rejectsOwnerSubjectLongerThan255Characters() throws Exception {
+        doNothing().when(documentStorageService).upload(anyString(), any(), anyString(), anyLong());
+
+        createTenant("Acme Long Subject", "sub_long_subject");
+        String serviceKey = createServiceKey();
+
+        MockMultipartFile file = new MockMultipartFile(
+                "file", "Long.pdf", "application/pdf", "content".getBytes());
+
+        mockMvc.perform(multipart("/api/v1/documents")
+                        .file(file)
+                        .header(AUTHORIZATION, "Bearer " + serviceKey)
+                        .param("name", "Long.pdf")
+                        .param("mimeType", "application/pdf")
+                        .param("ownerSubject", "x".repeat(256)))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
     void uploadFailureRollsBackTransaction() throws Exception {
         doThrow(new StorageException("B2 upload failed"))
                 .when(documentStorageService).upload(anyString(), any(), anyString(), anyLong());
 
         createTenant("Acme Rollback", "sub_rollback");
         String serviceKey = createServiceKey();
-        UUID ownerUserId = UUID.randomUUID();
+        String ownerSubject = "sub_service_actor";
 
         MockMultipartFile file = new MockMultipartFile(
                 "file", "Fail.pdf", "application/pdf", "content".getBytes());
@@ -307,7 +407,7 @@ class DocumentFlowIntegrationTest extends BaseIntegrationTest {
                         .header(AUTHORIZATION, "Bearer " + serviceKey)
                         .param("name", "Fail.pdf")
                         .param("mimeType", "application/pdf")
-                        .param("ownerUserId", ownerUserId.toString()))
+                        .param("ownerSubject", ownerSubject))
                 .andExpect(status().isInternalServerError());
 
         String schema = tenantIds.isEmpty() ? null :
@@ -332,7 +432,7 @@ class DocumentFlowIntegrationTest extends BaseIntegrationTest {
 
         createTenant("Acme Filename", "sub_filename");
         String serviceKey = createServiceKey();
-        UUID ownerUserId = UUID.randomUUID();
+        String ownerSubject = "sub_service_actor";
 
         MockMultipartFile file = new MockMultipartFile(
                 "file", "OriginalName.pdf", "application/pdf", "content".getBytes());
@@ -341,7 +441,7 @@ class DocumentFlowIntegrationTest extends BaseIntegrationTest {
                         .file(file)
                         .header(AUTHORIZATION, "Bearer " + serviceKey)
                         .param("mimeType", "application/pdf")
-                        .param("ownerUserId", ownerUserId.toString()))
+                        .param("ownerSubject", ownerSubject))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.name").value("OriginalName.pdf"))
                 .andReturn();
@@ -353,7 +453,7 @@ class DocumentFlowIntegrationTest extends BaseIntegrationTest {
 
         createTenant("Acme Mime", "sub_mime");
         String serviceKey = createServiceKey();
-        UUID ownerUserId = UUID.randomUUID();
+        String ownerSubject = "sub_service_actor";
 
         MockMultipartFile file = new MockMultipartFile(
                 "file", "Doc.txt", "text/plain", "content".getBytes());
@@ -362,7 +462,7 @@ class DocumentFlowIntegrationTest extends BaseIntegrationTest {
                         .file(file)
                         .header(AUTHORIZATION, "Bearer " + serviceKey)
                         .param("name", "Doc.txt")
-                        .param("ownerUserId", ownerUserId.toString()))
+                        .param("ownerSubject", ownerSubject))
                 .andExpect(status().isCreated())
                 .andReturn();
 
@@ -384,7 +484,7 @@ class DocumentFlowIntegrationTest extends BaseIntegrationTest {
 
         createTenant("Acme Checksum", "sub_checksum");
         String serviceKey = createServiceKey();
-        UUID ownerUserId = UUID.randomUUID();
+        String ownerSubject = "sub_service_actor";
         byte[] fileBytes = "checksum test payload".getBytes();
         String expectedChecksum = DocumentHashUtil.sha256Hex(fileBytes);
 
@@ -396,7 +496,7 @@ class DocumentFlowIntegrationTest extends BaseIntegrationTest {
                         .header(AUTHORIZATION, "Bearer " + serviceKey)
                         .param("name", "Checksum.pdf")
                         .param("mimeType", "application/pdf")
-                        .param("ownerUserId", ownerUserId.toString()))
+                        .param("ownerSubject", ownerSubject))
                 .andExpect(status().isCreated())
                 .andReturn();
 
@@ -424,7 +524,7 @@ class DocumentFlowIntegrationTest extends BaseIntegrationTest {
         CreateTenantResponse tenant = createTenant("Acme Key", "sub_key");
         String schema = tenant.tenant().schemaName();
         String serviceKey = createServiceKey();
-        UUID ownerUserId = UUID.randomUUID();
+        String ownerSubject = "sub_service_actor";
         byte[] fileBytes = "key format test".getBytes();
         String checksum = DocumentHashUtil.sha256Hex(fileBytes);
 
@@ -436,7 +536,7 @@ class DocumentFlowIntegrationTest extends BaseIntegrationTest {
                         .header(AUTHORIZATION, "Bearer " + serviceKey)
                         .param("name", "Key.pdf")
                         .param("mimeType", "application/pdf")
-                        .param("ownerUserId", ownerUserId.toString()))
+                        .param("ownerSubject", ownerSubject))
                 .andExpect(status().isCreated())
                 .andReturn();
 
@@ -455,7 +555,7 @@ class DocumentFlowIntegrationTest extends BaseIntegrationTest {
         CreateTenantResponse tenant = createTenant("Acme Deleted", "sub_deleted");
         String schema = tenant.tenant().schemaName();
         String serviceKey = createServiceKey();
-        UUID ownerUserId = UUID.randomUUID();
+        String ownerSubject = "sub_service_actor";
 
         MockMultipartFile file = new MockMultipartFile(
                 "file", "DeleteMe.pdf", "application/pdf", "content".getBytes());
@@ -465,7 +565,7 @@ class DocumentFlowIntegrationTest extends BaseIntegrationTest {
                         .header(AUTHORIZATION, "Bearer " + serviceKey)
                         .param("name", "DeleteMe.pdf")
                         .param("mimeType", "application/pdf")
-                        .param("ownerUserId", ownerUserId.toString()))
+                        .param("ownerSubject", ownerSubject))
                 .andExpect(status().isCreated())
                 .andReturn();
         UUID documentId = UUID.fromString(body(createResult).get("id").asText());
@@ -480,7 +580,7 @@ class DocumentFlowIntegrationTest extends BaseIntegrationTest {
                         .header(AUTHORIZATION, "Bearer " + serviceKey)
                         .param("name", "DeleteMe_v2.pdf")
                         .param("mimeType", "application/pdf")
-                        .param("ownerUserId", ownerUserId.toString()))
+                        .param("ownerSubject", ownerSubject))
                 .andExpect(status().isNotFound());
     }
 
@@ -488,7 +588,7 @@ class DocumentFlowIntegrationTest extends BaseIntegrationTest {
     void rejectsEmptyFile() throws Exception {
         createTenant("Acme Empty", "sub_empty");
         String serviceKey = createServiceKey();
-        UUID ownerUserId = UUID.randomUUID();
+        String ownerSubject = "sub_service_actor";
 
         MockMultipartFile file = new MockMultipartFile(
                 "file", "Empty.pdf", "application/pdf", new byte[0]);
@@ -498,7 +598,7 @@ class DocumentFlowIntegrationTest extends BaseIntegrationTest {
                         .header(AUTHORIZATION, "Bearer " + serviceKey)
                         .param("name", "Empty.pdf")
                         .param("mimeType", "application/pdf")
-                        .param("ownerUserId", ownerUserId.toString()))
+                        .param("ownerSubject", ownerSubject))
                 .andExpect(status().isBadRequest());
     }
 
@@ -506,7 +606,7 @@ class DocumentFlowIntegrationTest extends BaseIntegrationTest {
     void rejectsOversizedFile() throws Exception {
         createTenant("Acme Oversize", "sub_oversize");
         String serviceKey = createServiceKey();
-        UUID ownerUserId = UUID.randomUUID();
+        String ownerSubject = "sub_service_actor";
 
         MockMultipartFile file = new MockMultipartFile(
                 "file", "Big.pdf", "application/pdf", new byte[2048]);
@@ -516,7 +616,7 @@ class DocumentFlowIntegrationTest extends BaseIntegrationTest {
                         .header(AUTHORIZATION, "Bearer " + serviceKey)
                         .param("name", "Big.pdf")
                         .param("mimeType", "application/pdf")
-                        .param("ownerUserId", ownerUserId.toString()))
+                        .param("ownerSubject", ownerSubject))
                 .andExpect(status().isPayloadTooLarge());
     }
 
@@ -524,7 +624,7 @@ class DocumentFlowIntegrationTest extends BaseIntegrationTest {
     void rejectsDisallowedMimeType() throws Exception {
         createTenant("Acme Mime Reject", "sub_mime_reject");
         String serviceKey = createServiceKey();
-        UUID ownerUserId = UUID.randomUUID();
+        String ownerSubject = "sub_service_actor";
 
         MockMultipartFile file = new MockMultipartFile(
                 "file", "Malware.exe", "application/x-msdownload", "content".getBytes());
@@ -534,7 +634,7 @@ class DocumentFlowIntegrationTest extends BaseIntegrationTest {
                         .header(AUTHORIZATION, "Bearer " + serviceKey)
                         .param("name", "Malware.exe")
                         .param("mimeType", "application/x-msdownload")
-                        .param("ownerUserId", ownerUserId.toString()))
+                        .param("ownerSubject", ownerSubject))
                 .andExpect(status().isUnsupportedMediaType());
     }
 
@@ -542,7 +642,7 @@ class DocumentFlowIntegrationTest extends BaseIntegrationTest {
     void rejectsNameLongerThan500Characters() throws Exception {
         createTenant("Acme Long Name", "sub_long_name");
         String serviceKey = createServiceKey();
-        UUID ownerUserId = UUID.randomUUID();
+        String ownerSubject = "sub_service_actor";
 
         MockMultipartFile file = new MockMultipartFile(
                 "file", "Long.pdf", "application/pdf", "content".getBytes());
@@ -552,7 +652,7 @@ class DocumentFlowIntegrationTest extends BaseIntegrationTest {
                         .header(AUTHORIZATION, "Bearer " + serviceKey)
                         .param("name", "x".repeat(501))
                         .param("mimeType", "application/pdf")
-                        .param("ownerUserId", ownerUserId.toString()))
+                        .param("ownerSubject", ownerSubject))
                 .andExpect(status().isBadRequest());
     }
 
@@ -560,13 +660,13 @@ class DocumentFlowIntegrationTest extends BaseIntegrationTest {
     void rejectsMissingFilePart() throws Exception {
         createTenant("Acme No File", "sub_no_file");
         String serviceKey = createServiceKey();
-        UUID ownerUserId = UUID.randomUUID();
+        String ownerSubject = "sub_service_actor";
 
         mockMvc.perform(multipart("/api/v1/documents")
                         .header(AUTHORIZATION, "Bearer " + serviceKey)
                         .param("name", "Ghost.pdf")
                         .param("mimeType", "application/pdf")
-                        .param("ownerUserId", ownerUserId.toString()))
+                        .param("ownerSubject", ownerSubject))
                 .andExpect(status().isBadRequest());
     }
 
@@ -576,7 +676,7 @@ class DocumentFlowIntegrationTest extends BaseIntegrationTest {
 
         CreateTenantResponse tenant = createTenantWithPlan("Acme Usage", "sub_usage", quotaPlan());
         String serviceKey = createServiceKey();
-        UUID ownerUserId = UUID.randomUUID();
+        String ownerSubject = "sub_service_actor";
 
         MockMultipartFile file = new MockMultipartFile(
                 "file", "Usage.pdf", "application/pdf", new byte[5]);
@@ -586,7 +686,7 @@ class DocumentFlowIntegrationTest extends BaseIntegrationTest {
                         .header(AUTHORIZATION, "Bearer " + serviceKey)
                         .param("name", "Usage.pdf")
                         .param("mimeType", "application/pdf")
-                        .param("ownerUserId", ownerUserId.toString()))
+                        .param("ownerSubject", ownerSubject))
                 .andExpect(status().isCreated());
 
         Long used = jdbcTemplate.queryForObject(
@@ -601,7 +701,7 @@ class DocumentFlowIntegrationTest extends BaseIntegrationTest {
 
         CreateTenantResponse tenant = createTenantWithPlan("Acme Quota", "sub_quota", quotaPlan());
         String serviceKey = createServiceKey();
-        UUID ownerUserId = UUID.randomUUID();
+        String ownerSubject = "sub_service_actor";
 
         MockMultipartFile file = new MockMultipartFile(
                 "file", "Big.pdf", "application/pdf", new byte[100]);
@@ -611,7 +711,7 @@ class DocumentFlowIntegrationTest extends BaseIntegrationTest {
                         .header(AUTHORIZATION, "Bearer " + serviceKey)
                         .param("name", "Big.pdf")
                         .param("mimeType", "application/pdf")
-                        .param("ownerUserId", ownerUserId.toString()))
+                        .param("ownerSubject", ownerSubject))
                 .andExpect(status().isConflict());
 
         String schema = jdbcTemplate.queryForObject(
@@ -634,7 +734,7 @@ class DocumentFlowIntegrationTest extends BaseIntegrationTest {
         CreateTenantResponse tenant = createTenantWithPlan("Acme Accum", "sub_accum", quotaPlan());
         String schema = tenant.tenant().schemaName();
         String serviceKey = createServiceKey();
-        UUID ownerUserId = UUID.randomUUID();
+        String ownerSubject = "sub_service_actor";
 
         MockMultipartFile fileV1 = new MockMultipartFile(
                 "file", "V1.pdf", "application/pdf", new byte[40]);
@@ -644,7 +744,7 @@ class DocumentFlowIntegrationTest extends BaseIntegrationTest {
                         .header(AUTHORIZATION, "Bearer " + serviceKey)
                         .param("name", "V1.pdf")
                         .param("mimeType", "application/pdf")
-                        .param("ownerUserId", ownerUserId.toString()))
+                        .param("ownerSubject", ownerSubject))
                 .andExpect(status().isCreated())
                 .andReturn();
         UUID documentId = UUID.fromString(body(createResult).get("id").asText());
@@ -657,7 +757,7 @@ class DocumentFlowIntegrationTest extends BaseIntegrationTest {
                         .header(AUTHORIZATION, "Bearer " + serviceKey)
                         .param("name", "V2.pdf")
                         .param("mimeType", "application/pdf")
-                        .param("ownerUserId", ownerUserId.toString()))
+                        .param("ownerSubject", ownerSubject))
                 .andExpect(status().isConflict());
 
         Long used = jdbcTemplate.queryForObject(
@@ -682,6 +782,28 @@ class DocumentFlowIntegrationTest extends BaseIntegrationTest {
     private CreateTenantResponse createTenant(String name, String subject) {
         Plan plan = planRepository.findAll().stream().filter(Plan::getIsActive).findFirst().orElseThrow();
         return createTenantWithPlan(name, subject, plan);
+    }
+
+    private UUID uploadWithSubject(String serviceKey, String fileName, String ownerSubject) throws Exception {
+        MockMultipartFile file = new MockMultipartFile(
+                "file", fileName, "application/pdf", "content".getBytes());
+
+        MvcResult result = mockMvc.perform(multipart("/api/v1/documents")
+                        .file(file)
+                        .header(AUTHORIZATION, "Bearer " + serviceKey)
+                        .param("name", fileName)
+                        .param("mimeType", "application/pdf")
+                        .param("ownerSubject", ownerSubject))
+                .andExpect(status().isCreated())
+                .andReturn();
+
+        return UUID.fromString(body(result).path("currentVersion").get("createdBy").asText());
+    }
+
+    private UUID memberId(UUID tenantId, String subject) {
+        return jdbcTemplate.queryForObject(
+                "SELECT id FROM public.tenant_member WHERE tenant_id = ? AND subject = ?",
+                UUID.class, tenantId, subject);
     }
 
     private CreateTenantResponse createTenantWithPlan(String name, String subject, Plan plan) {

@@ -258,7 +258,7 @@ class JwtFilterIntegrationTest extends BaseIntegrationTest {
     }
 
     @Test
-    void updatesExistingMemberOnReLogin() throws Exception {
+    void keepsDeclaredEmailWhenReLoginPresentsDifferentEmail() throws Exception {
         String rawKey = createStandardKey(tenantId);
         String firstToken = jwt(KEY_ID, VALID_KEY_PAIR, ISSUER, SUBJECT, AUDIENCE, Instant.now().plusSeconds(300));
 
@@ -283,7 +283,7 @@ class JwtFilterIntegrationTest extends BaseIntegrationTest {
 
         TenantMember updated = tenantMemberRepository.findByTenantIdAndSubject(tenantId, SUBJECT).orElseThrow();
         assertThat(updated.getId()).isEqualTo(firstLogin.getId());
-        assertThat(updated.getEmail()).isEqualTo("updated@test.com");
+        assertThat(updated.getEmail()).isEqualTo(SUBJECT + "@test.com");
         assertThat(updated.getDisplayName()).isEqualTo("User Updated");
         assertThat(updated.getFirstSeenAt()).isEqualTo(firstLogin.getFirstSeenAt());
         assertThat(updated.getLastSeenAt()).isAfterOrEqualTo(firstLogin.getLastSeenAt());

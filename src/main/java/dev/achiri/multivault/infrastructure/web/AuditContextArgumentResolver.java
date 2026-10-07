@@ -13,11 +13,11 @@ import org.springframework.web.context.request.NativeWebRequest;
 import org.springframework.web.method.support.HandlerMethodArgumentResolver;
 import org.springframework.web.method.support.ModelAndViewContainer;
 
-import java.util.UUID;
-
 @Component
 @RequiredArgsConstructor
 public class AuditContextArgumentResolver implements HandlerMethodArgumentResolver {
+
+    private static final int MAX_LENGTH = 255;
 
     private final AuditContextResolver auditContextResolver;
 
@@ -31,18 +31,22 @@ public class AuditContextArgumentResolver implements HandlerMethodArgumentResolv
                                   NativeWebRequest webRequest, WebDataBinderFactory binderFactory) {
         HttpServletRequest request = webRequest.getNativeRequest(HttpServletRequest.class);
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
-        return auditContextResolver.resolve(ownerUserId(request), authentication, request);
+        return auditContextResolver.resolve(
+                requestParam(request, "ownerSubject"),
+                requestParam(request, "ownerEmail"),
+                authentication,
+                request);
     }
 
-    private UUID ownerUserId(HttpServletRequest request) {
-        String value = request.getParameter("ownerUserId");
+    private String requestParam(HttpServletRequest request, String name) {
+        String value = request.getParameter(name);
         if (value == null || value.isBlank()) {
             return null;
         }
-        try {
-            return UUID.fromString(value);
-        } catch (IllegalArgumentException e) {
-            throw new IllegalArgumentException("ownerUserId inválido");
+        String trimmed = value.trim();
+        if (trimmed.length() > MAX_LENGTH) {
+            throw new IllegalArgumentException(name + " excede los " + MAX_LENGTH + " caracteres");
         }
+        return trimmed;
     }
 }

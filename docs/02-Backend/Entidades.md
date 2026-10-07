@@ -81,7 +81,7 @@ Existen las entidades `Tenant`, `TenantIdentityProvider`, `TenantMember`, `Audit
 | `SoftDeletable extends DateAudit` | `deletedAt` (`Instant`) | Entidades soft-delete (`folder`, `document`) |
 
 - Las columnas se mapean explícitamente (`@Column(name = "created_at")`) porque con `ddl-auto: validate` y `PhysicalNamingStrategyStandardImpl` no hay conversión a snake_case.
-- `AuditorAwareImpl` (`infrastructure/persistence/auditing`) es un placeholder que devuelve un UUID de sistema (`00000000-0000-0000-0000-000000000000`). Solo aplica a who-columns del schema de tenant que usan `@CreatedBy` (`folder.created_by`); `DocumentVersion.createdBy` **ya no** usa `@CreatedBy`: el `AuditorAware` placeholder lo sobrescribiría con el UUID de sistema, así que `DocumentService` lo setea explícitamente con el actor real (memberId del principal JWT u `ownerUserId` del body para keys SERVICE). El schema público no usa who-columns.
+- `AuditorAwareImpl` (`infrastructure/persistence/auditing`) es un placeholder que devuelve un UUID de sistema (`00000000-0000-0000-0000-000000000000`). Solo aplica a who-columns del schema de tenant que usan `@CreatedBy` (`folder.created_by`); `DocumentVersion.createdBy` **ya no** usa `@CreatedBy`: el `AuditorAware` placeholder lo sobrescribiría con el UUID de sistema, así que `DocumentService` lo setea explícitamente con el actor real (memberId del principal JWT o el miembro que resuelve el claim `sub` del IdP para keys SERVICE, ADR-0017). El schema público no usa who-columns.
 - **Requisito futuro**: reemplazar `AuditorAwareImpl` por un `AuditorAware` que lea el `tenant_member.id` autenticado antes de poblar `@CreatedBy` con datos reales (afecta a `folder.created_by`).
 
 ### Ejemplo de estructura esperada

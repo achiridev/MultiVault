@@ -49,7 +49,7 @@ CREATE TABLE document_version (
 
 ### Flujo de upload
 
-1. Controller recibe `multipart/form-data`: `file` (MultipartFile) + `name`, `mimeType`, `folderId`, `ownerUserId` (form params)
+1. Controller recibe `multipart/form-data`: `file` (MultipartFile) + `name`, `mimeType`, `folderId`, `ownerSubject` (form params; `ownerSubject`/`ownerEmail` identifican al actor cuando la credencial es SERVICE, ADR-0017)
 2. Service lee bytes del archivo → calcula SHA-256 y sizeBytes server-side
 3. Crea `Document` en DB (status = ACTIVE)
 4. Calcula `storageKey`: `{schema}/{documentId}/{versionNumber}/{checksum}`

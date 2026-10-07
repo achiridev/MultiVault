@@ -154,6 +154,12 @@ CREATE TABLE tenant_member (
 - `subject` es el raw claim del JWT externo (no necesariamente UUID)
 - Se puebla con upsert la primera vez que llega un JWT válido
 
+`TenantMemberService.upsert` es el único punto de alta y actualización de miembros, y lo invocan dos caminos: el login (`JwtAuthenticationFilter`) y la atribución de una escritura por credencial SERVICE, que referencia al actor por su claim `sub` ([ADR-0017](../06-Decisiones/ADR-0017.md)). En el login, el `sub` viene de un token validado criptográficamente contra el IdP del tenant. En la atribución por SERVICE, el `sub` lo aserta el proceso que llama, con el nivel de confianza de una credencial `*` (ADR-0012). En ambos casos la resolución ocurre dentro del tenant del caller, por el índice único `(tenant_id, subject)`.
+
+**`email` declarado no se sobrescribe a ciegas.** Cuando la fila ya existe, el `email` solo se escribe si el claim entrante es null, si coincide con el almacenado (comparación `trim` + `toLowerCase`, para no depender del casing del IdP) o si el miembro aún no tenía email. Si difiere, se conserva el valor declarado y se emite un `log.warn`: es señal de que el `subject` declarado en el onboarding no corresponde a la persona que realmente está entrando, y sobrescribirlo destruiría la única evidencia disponible para diagnosticarlo. `display_name` y `last_seen_at` sí se actualizan siempre, porque son datos de presentación y no de identidad. `subject` nunca se normaliza: es case-sensitive.
+
+El `log.warn` es deliberado y no un `audit_log`: el desacuerdo es un **estado persistente**, no un evento. Como nada lo resuelve por sí solo, auditarlo en cada request inundaría un log que es WORM y del que no se puede depurar. Hacerlo durable requiere el estado que el ADR-0017 deja explícitamente pendiente.
+
 ## Pendientes
 
 - [x] Configurar Spring Security con `SecurityFilterChain` (`SecurityConfig`: CSRF off, stateless, `POST /tenants` público, resto autenticado)
@@ -162,6 +168,7 @@ CREATE TABLE tenant_member (
 - [ ] Implementar `PlatformUserAuthenticationProvider` para login de staff
 - [ ] Implementar servicio de creación/rotación de API keys
 - [x] Implementar `TenantMemberService` para upsert de miembros
+- [x] Resolver el actor de una escritura por claim `sub` del IdP en credenciales SERVICE — ADR-0017
 - [ ] Agregar endpoint de login para platform_user
 - [ ] Agregar endpoint de refresh de API keys
 - [x] Implementar creación de API keys (key inicial del admin en onboarding); rotación pendiente
@@ -172,3 +179,5 @@ CREATE TABLE tenant_member (
 - ¿Cómo se distingue si un request usa JWT vs API Key? → **Resuelto:** por prefijo `mv_live_` en el token Bearer (`ApiKeyAuthenticationFilter`)
 - ~~¿Los SERVICE keys requieren algún tipo de rate limiting diferente?~~ El scope `API_KEY` del rate limiter ya está implementado ([ADR-0016](../06-Decisiones/ADR-0016.md)) y `TenantRateLimitKeyResolver` lo resuelve desde el `ApiKeyPrincipal` sin I/O adicional. Falta decidir si el límite por API key se deriva de `plan.max_requests_per_minute` y si las SERVICE keys llevan un techo más estricto que las STANDARD.
 - ¿Cómo se maneja la expiración de sesiones de platform_user?
+- ~~¿Una fila de `tenant_member` significa que esa persona existe?~~ **Matizado en [ADR-0017](../06-Decisiones/ADR-0017.md)**: desde que la credencial SERVICE puede resolver un `ownerSubject` desconocido, `tenant_member` mezcla identidades probadas por un login con identidades asertadas por un proceso. Hoy nada consulta esa diferencia. Cuando haga falta, `verified_at TIMESTAMPTZ` responde la misma consulta que un booleano (`verified_at IS NOT NULL`) y además registra el momento.
+- ~~¿`email` es identidad o presentación?~~ **Resuelto:** es identidad declarada. Se conserva el valor del onboarding y no se sobrescribe con un claim distinto, para que la discrepancia quede diagnosticable.

@@ -275,7 +275,7 @@ Document upload responses:
 | Status | Meaning |
 |---|---|
 | `201` | Created (document/version) |
-| `400` | Empty/missing file, invalid body, missing `ownerUserId` with SERVICE key |
+| `400` | Empty/missing file, invalid body, missing `ownerSubject` with SERVICE key |
 | `404` | Document not found or soft-deleted (versions endpoint) |
 | `409` | Plan storage quota exceeded (`tenant_usage.storage_bytes_used` vs `plan.max_storage_bytes`) |
 | `413` | File exceeds `UPLOAD_MAX_SIZE_BYTES` (per-file limit) |

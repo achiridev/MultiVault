@@ -109,6 +109,11 @@ public class GlobalExceptionHandler {
         return ResponseEntity.badRequest().body(error(400, ex.getMessage()));
     }
 
+    @ExceptionHandler(MiembroInvalidoException.class)
+    public ResponseEntity<ErrorResponse> handleMiembroInvalido(MiembroInvalidoException ex) {
+        return ResponseEntity.badRequest().body(error(400, ex.getMessage()));
+    }
+
     @ExceptionHandler(ArchivoInvalidoException.class)
     public ResponseEntity<ErrorResponse> handleArchivoInvalido(ArchivoInvalidoException ex) {
         return ResponseEntity.badRequest().body(error(400, ex.getMessage()));

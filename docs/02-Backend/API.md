@@ -193,11 +193,11 @@ Los endpoints de documentos operan sobre el schema del tenant resuelto desde el 
 
 Validación de upload (`UploadPolicy`, config `multivault.upload.*`): archivo vacío o ausente → `400`; tamaño > `multivault.upload.max-size-bytes` (default 100 MB) → `413`; MIME fuera de `multivault.upload.allowed-mime-types` (lista separada por comas vía env `UPLOAD_ALLOWED_MIME_TYPES`; vacía = permitir todo) → `415`. Request multipart malformado o part `file` faltante → `400`. Superar la cuota de almacenamiento del plan (`tenant_usage.storage_bytes_used + size_bytes > plan.max_storage_bytes`) → `409` (ADR-0013). Fallos de almacenamiento → `500`.
 
-El actor (`owner_user_id` del documento y `created_by` de cada versión) se resuelve así: con JWT → `memberId` del principal; con API key `SERVICE` → `ownerUserId` **obligatorio** en los form params (400 si falta). Al crear el documento, el trigger DB `trg_document_owner_permission` crea automáticamente la fila OWNER en `document_permission`. Las escrituras registran auditoría en `public.audit_log` (patrón ADR-0003): `DOCUMENT_CREATED` (recurso `document`) y `DOCUMENT_VERSION_UPLOADED` (recurso `document_version`), con `actor_type`/`api_key_id` según el principal, IP y User-Agent del request, y metadata con nombre y `version_number`. Las lecturas no se auditan.
+El actor (`owner_user_id` del documento y `created_by` de cada versión) se resuelve en `AuditContextResolver`, en el boundary de la API: con JWT → `memberId` del principal (el `JwtAuthenticationFilter` ya materializó el miembro con `upsert` antes de que el controller resuelva argumentos, así que siempre existe); con API key `SERVICE` → el form param `ownerSubject` **obligatorio** (400 si falta), que es el claim `sub` del IdP del tenant y se resuelve con `TenantMemberService.upsert`, creando el `tenant_member` si aún no existe (ADR-0017). Un `ownerSubject` se resuelve siempre dentro del namespace del tenant del caller, así que nunca puede apuntar a un miembro de otro tenant. `ownerEmail` es opcional y solo se aplica al crear el miembro. Si el miembro resuelto está `is_active = false` → `400` (`MiembroInvalidoException`). Al crear el documento, el trigger DB `trg_document_owner_permission` crea automáticamente la fila OWNER en `document_permission`. Las escrituras registran auditoría en `public.audit_log` (patrón ADR-0003): `DOCUMENT_CREATED` (recurso `document`) y `DOCUMENT_VERSION_UPLOADED` (recurso `document_version`), con `actor_type`/`api_key_id` según el principal, IP y User-Agent del request, y metadata con nombre y `version_number`. Las lecturas no se auditan.
 
 #### POST `/api/v1/documents` — Crear documento (implementado)
 
-Crea el documento (`status = ACTIVE`) + su versión v1 + repunta `current_version_id`. Sube el archivo a B2. `201 Created`; `400` con archivo vacío, part `file` faltante, `name` > 500 chars o falta de `ownerUserId` con key SERVICE; `409` si supera la cuota de almacenamiento del plan; `413` si excede `multivault.upload.max-size-bytes`; `415` si el MIME no está en la allowlist.
+Crea el documento (`status = ACTIVE`) + su versión v1 + repunta `current_version_id`. Sube el archivo a B2. `201 Created`; `400` con archivo vacío, part `file` faltante, `name` > 500 chars, `ownerSubject`/`ownerEmail` de más de 255 chars, falta de `ownerSubject` con key SERVICE, o miembro inactivo; `409` si supera la cuota de almacenamiento del plan; `413` si excede `multivault.upload.max-size-bytes`; `415` si el MIME no está en la allowlist.
 
 Request (`multipart/form-data`):
 | Part | Tipo | Requerido | Descripción |
@@ -206,7 +206,8 @@ Request (`multipart/form-data`):
 | `name` | String | No | Nombre del documento (default: nombre original del archivo) |
 | `mimeType` | String | No | MIME type (default: content-type del archivo) |
 | `folderId` | UUID | No | ID de la carpeta padre |
-| `ownerUserId` | UUID | Con SERVICE key | Owner del documento |
+| `ownerSubject` | String | Con SERVICE key | Claim `sub` del IdP del tenant que identifica al owner |
+| `ownerEmail` | String | No | Email del owner; solo se aplica al crear el miembro |
 
 Response `201 Created`:
 ```json
@@ -230,7 +231,7 @@ Response `201 Created`:
 
 #### POST `/api/v1/documents/{documentId}/versions` — Subir nueva versión (implementado)
 
-Crea una versión inmutable con `version_number = max + 1` y repunta `current_version_id`. Sube el archivo a B2. `404` si el documento no existe o está borrado (soft delete). `201 Created` con el DTO de la versión. `400` con archivo vacío o `name` > 500 chars; `409` si supera la cuota de almacenamiento del plan; `413` si excede el tamaño máximo; `415` si el MIME no está en la allowlist. `ownerUserId` opcional con JWT, obligatorio con key SERVICE (puebla `created_by`).
+Crea una versión inmutable con `version_number = max + 1` y repunta `current_version_id`. Sube el archivo a B2. `404` si el documento no existe o está borrado (soft delete). `201 Created` con el DTO de la versión. `400` con archivo vacío o `name` > 500 chars; `409` si supera la cuota de almacenamiento del plan; `413` si excede el tamaño máximo; `415` si el MIME no está en la allowlist. `ownerSubject`/`ownerEmail` con las mismas reglas y errores que en `POST /api/v1/documents` (ver la sección de resolución del actor).
 
 Request (`multipart/form-data`):
 | Part | Tipo | Requerido | Descripción |
@@ -238,7 +239,8 @@ Request (`multipart/form-data`):
 | `file` | MultipartFile | Sí | Archivo binario |
 | `name` | String | No | Nombre de la versión (default: nombre original del archivo) |
 | `mimeType` | String | No | MIME type (default: content-type del archivo) |
-| `ownerUserId` | UUID | Con SERVICE key | Actor que sube la versión |
+| `ownerSubject` | String | Con SERVICE key | Claim `sub` del IdP del tenant que identifica al actor |
+| `ownerEmail` | String | No | Email del actor; solo se aplica al crear el miembro |
 
 #### GET `/api/v1/documents/{documentId}` — Obtener documento (implementado)
 
