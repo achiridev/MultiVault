@@ -36,7 +36,9 @@ public class RateLimitConfig {
         if (!errors.isEmpty()) {
             throw new IllegalStateException("Configuración inválida de rate limiting: " + String.join("; ", errors));
         }
-        if (!properties.enabled()) {
+        if (properties.enabled()) {
+            log.info("Rate limiting activo; failMode={} reglas={}", properties.failMode(), properties.rules().size());
+        } else {
             log.warn("Rate limiting deshabilitado por multivault.ratelimit.enabled=false");
         }
         return new FailModeRateLimiter(distributed, localRateLimiter, properties.failMode());
@@ -45,16 +47,16 @@ public class RateLimitConfig {
     @Bean
     RateLimitFilter ipRateLimitFilter(RateLimitRuleMatcher ruleMatcher, RateLimiter rateLimiter,
                                       IpRateLimitKeyResolver keyResolver, RateLimitMetricsListener metrics,
-                                      JsonErrorWriter jsonErrorWriter) {
+                                      JsonErrorWriter jsonErrorWriter, RateLimitProperties properties) {
         return new RateLimitFilter(ruleMatcher, rateLimiter, keyResolver, metrics, jsonErrorWriter,
-                Set.of(RateLimitScope.IP, RateLimitScope.GLOBAL));
+                Set.of(RateLimitScope.IP, RateLimitScope.GLOBAL), properties);
     }
 
     @Bean
     RateLimitFilter tenantRateLimitFilter(RateLimitRuleMatcher ruleMatcher, RateLimiter rateLimiter,
                                           TenantRateLimitKeyResolver keyResolver, RateLimitMetricsListener metrics,
-                                          JsonErrorWriter jsonErrorWriter) {
+                                          JsonErrorWriter jsonErrorWriter, RateLimitProperties properties) {
         return new RateLimitFilter(ruleMatcher, rateLimiter, keyResolver, metrics, jsonErrorWriter,
-                Set.of(RateLimitScope.TENANT, RateLimitScope.API_KEY));
+                Set.of(RateLimitScope.TENANT, RateLimitScope.API_KEY), properties);
     }
 }

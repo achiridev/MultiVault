@@ -18,10 +18,14 @@ public class RateLimitKeyHasher {
 
     public RateLimitKeyHasher(String prefix, String salt) {
         this.prefix = prefix;
-        this.salt = new SecretKeySpec(salt.getBytes(StandardCharsets.UTF_8), ALGORITHM);
+        this.salt = salt == null || salt.isBlank() ? null : new SecretKeySpec(salt.getBytes(StandardCharsets.UTF_8), ALGORITHM);
     }
 
     public String hash(String ruleId, RateLimitScope scope, String rawValue) {
+        if (salt == null) {
+            throw new IllegalStateException(
+                    "multivault.ratelimit.key-salt es obligatorio para derivar claves de rate limit");
+        }
         try {
             Mac mac = Mac.getInstance(ALGORITHM);
             mac.init(salt);

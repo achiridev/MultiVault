@@ -66,7 +66,7 @@ public class IdempotencyFilter extends OncePerRequestFilter {
 
     @Override
     protected boolean shouldNotFilter(HttpServletRequest request) {
-        return HttpMethod.GET.name().equals(request.getMethod());
+        return !properties.enabled() || HttpMethod.GET.name().equals(request.getMethod());
     }
 
     private void processFreshRequest(HttpServletRequest request, byte[] body, HttpServletResponse response,

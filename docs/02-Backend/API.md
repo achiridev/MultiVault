@@ -76,6 +76,11 @@ Si Redis no está disponible, el límite degrada a un bucket en memoria **por in
 (`fail-mode: CLOSED`): el servicio nunca queda sin límite. Con `fail-mode: OPEN` el tráfico
 se deixa pasar sin limitación y el corte global deja de ser un límite de coste.
 
+`multivault.ratelimit.enabled=false` es un kill switch real: ambos `RateLimitFilter` se
+registran en la `SecurityFilterChain` pero no aplican ningún límite. El arranque registra un
+`WARN`; con `enabled=true` registra un `INFO` con `failMode` y el número de reglas, para que un
+operador pueda confirmar en los logs si el rate limiting está activo en esa instancia.
+
 ### Idempotency-Key (ADR-0016)
 
 Header opcional `Idempotency-Key: <uuid>` en `POST /api/v1/tenants`. La clave se guarda en
@@ -94,6 +99,10 @@ Solo se guardan respuestas `2xx`; un `4xx`/`5xx` libera la clave para que el cli
 reintentar tras corregir. La garantía de no duplicar un tenant es la restricción `UNIQUE`
 de `schema_name`: si la clave expira mientras el aprovisionamiento corre, el segundo request
 choca con ella.
+
+`multivault.idempotency.enabled=false` desactiva el filtro por completo: el header se ignora,
+no se valida y cada request se procesa como si fuera nueva. El arranque registra un `WARN`
+cuando está apagado y un `INFO` cuando está activo.
 
 ## Autenticación
 

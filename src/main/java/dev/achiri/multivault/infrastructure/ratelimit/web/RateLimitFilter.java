@@ -1,5 +1,6 @@
 package dev.achiri.multivault.infrastructure.ratelimit.web;
 
+import dev.achiri.multivault.infrastructure.ratelimit.config.RateLimitProperties;
 import dev.achiri.multivault.infrastructure.ratelimit.handler.JsonErrorWriter;
 import dev.achiri.multivault.infrastructure.ratelimit.listener.RateLimitMetricsListener;
 import dev.achiri.multivault.infrastructure.ratelimit.model.RateLimitDecision;
@@ -36,6 +37,12 @@ public class RateLimitFilter extends OncePerRequestFilter {
     private final RateLimitMetricsListener metrics;
     private final JsonErrorWriter jsonErrorWriter;
     private final Set<RateLimitScope> handledScopes;
+    private final RateLimitProperties properties;
+
+    @Override
+    protected boolean shouldNotFilter(HttpServletRequest request) {
+        return !properties.enabled();
+    }
 
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain filterChain)

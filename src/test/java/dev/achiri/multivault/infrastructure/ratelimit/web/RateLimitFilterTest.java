@@ -57,7 +57,7 @@ class RateLimitFilterTest {
                 "onboarding", RateLimitScope.IP, 3, Duration.ofSeconds(42)));
         RateLimitFilter filter = new RateLimitFilter(matcherFor(rule("onboarding", "/api/**", RateLimitScope.IP)),
                 limiter, new StubKeyResolver(), metrics(), new JsonErrorWriter(new tools.jackson.databind.json.JsonMapper()),
-                Set.of(RateLimitScope.IP));
+                Set.of(RateLimitScope.IP), properties(true));
         MockHttpServletResponse response = new MockHttpServletResponse();
         RecordingChain chain = new RecordingChain();
 
@@ -83,7 +83,7 @@ class RateLimitFilterTest {
         RateLimitFilter filter = new RateLimitFilter(
                 matcherFor(rule("onboarding", "/api/**", RateLimitScope.IP, RateLimitScope.GLOBAL)),
                 limiter, keyResolver, metrics(), new JsonErrorWriter(new tools.jackson.databind.json.JsonMapper()),
-                Set.of(RateLimitScope.IP, RateLimitScope.GLOBAL));
+                Set.of(RateLimitScope.IP, RateLimitScope.GLOBAL), properties(true));
         MockHttpServletResponse response = new MockHttpServletResponse();
         RecordingChain chain = new RecordingChain();
 
@@ -101,7 +101,8 @@ class RateLimitFilterTest {
         RateLimitFilter filter = new RateLimitFilter(
                 matcherFor(rule("onboarding", "/api/**", RateLimitScope.IP, RateLimitScope.TENANT)),
                 limiter, (req, scope) -> Optional.empty(), metrics(),
-                new JsonErrorWriter(new tools.jackson.databind.json.JsonMapper()), Set.of(RateLimitScope.IP));
+                new JsonErrorWriter(new tools.jackson.databind.json.JsonMapper()), Set.of(RateLimitScope.IP),
+                properties(true));
         RecordingChain chain = new RecordingChain();
 
         filter.doFilter(request("/api/v1/documents", "203.0.113.5"), new MockHttpServletResponse(), chain);
@@ -115,7 +116,8 @@ class RateLimitFilterTest {
         StubLimiter limiter = new StubLimiter(RateLimitDecision.allowed("onboarding", RateLimitScope.IP, 3, 2));
         RateLimitFilter filter = new RateLimitFilter(matcherFor(rule("onboarding", "/api/**", RateLimitScope.IP)),
                 limiter, new StubKeyResolver(), metrics(),
-                new JsonErrorWriter(new tools.jackson.databind.json.JsonMapper()), Set.of(RateLimitScope.IP));
+                new JsonErrorWriter(new tools.jackson.databind.json.JsonMapper()), Set.of(RateLimitScope.IP),
+                properties(true));
         RecordingChain chain = new RecordingChain();
 
         filter.doFilter(request("/api/v1/documents", "203.0.113.5"), new MockHttpServletResponse(), chain);
@@ -124,10 +126,53 @@ class RateLimitFilterTest {
         assertThat(limiter.consumedScopes).containsExactly(RateLimitScope.IP);
     }
 
+    @Test
+    void skipsEnforcementWhenRateLimitingIsDisabled() throws Exception {
+        StubLimiter limiter = new StubLimiter(RateLimitDecision.rejected(
+                "onboarding", RateLimitScope.IP, 3, Duration.ofSeconds(42)));
+        RateLimitFilter filter = new RateLimitFilter(
+                matcherFor(rule("onboarding", "/api/**", RateLimitScope.IP)),
+                limiter, new StubKeyResolver(), metrics(),
+                new JsonErrorWriter(new tools.jackson.databind.json.JsonMapper()),
+                Set.of(RateLimitScope.IP), properties(false));
+        MockHttpServletResponse response = new MockHttpServletResponse();
+        RecordingChain chain = new RecordingChain();
+
+        filter.doFilter(request("/api/v1/tenants", "203.0.113.5"), response, chain);
+
+        assertThat(chain.invoked).isTrue();
+        assertThat(response.getStatus()).isEqualTo(200);
+        assertThat(limiter.consumedScopes).isEmpty();
+    }
+
+    @Test
+    void enforcesRulesWhenRateLimitingIsEnabled() throws Exception {
+        StubLimiter limiter = new StubLimiter(RateLimitDecision.rejected(
+                "onboarding", RateLimitScope.IP, 3, Duration.ofSeconds(42)));
+        RateLimitFilter filter = new RateLimitFilter(
+                matcherFor(rule("onboarding", "/api/**", RateLimitScope.IP)),
+                limiter, new StubKeyResolver(), metrics(),
+                new JsonErrorWriter(new tools.jackson.databind.json.JsonMapper()),
+                Set.of(RateLimitScope.IP), properties(true));
+        MockHttpServletResponse response = new MockHttpServletResponse();
+        RecordingChain chain = new RecordingChain();
+
+        filter.doFilter(request("/api/v1/tenants", "203.0.113.5"), response, chain);
+
+        assertThat(chain.invoked).isFalse();
+        assertThat(response.getStatus()).isEqualTo(429);
+        assertThat(limiter.consumedScopes).containsExactly(RateLimitScope.IP);
+    }
+
     private static RateLimitFilter filterFor(RateLimitProperties.Rule rule, RateLimitScope... scopes) {
         return new RateLimitFilter(matcherFor(rule), new StubLimiter(RateLimitDecision.allowed("r", RateLimitScope.IP, 3, 2)),
                 new StubKeyResolver(), metrics(),
-                new JsonErrorWriter(new tools.jackson.databind.json.JsonMapper()), Set.of(scopes));
+                new JsonErrorWriter(new tools.jackson.databind.json.JsonMapper()), Set.of(scopes), properties(true));
+    }
+
+    private static RateLimitProperties properties(boolean enabled) {
+        return new RateLimitProperties(enabled, "mv:rl:", "pepper",
+                RateLimitProperties.FailMode.CLOSED, List.of());
     }
 
     private static RateLimitRuleMatcher matcherFor(RateLimitProperties.Rule rule) {
