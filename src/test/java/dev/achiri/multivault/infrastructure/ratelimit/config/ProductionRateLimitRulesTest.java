@@ -39,10 +39,11 @@ class ProductionRateLimitRulesTest {
     }
 
     @Test
-    void noRuleDeclaresTheTenantOrApiKeyScopes() {
-        assertThat(properties().rules())
-                .flatMap(RateLimitProperties.Rule::scopes)
-                .doesNotContain("TENANT", "API_KEY");
+    void theApiKeysManageRuleCarriesApiKeyAndTenantScopes() {
+        RateLimitProperties.Rule apiKeysManage = rule("api-keys-manage");
+
+        assertThat(apiKeysManage.scopes()).containsExactly("API_KEY", "TENANT");
+        assertThat(apiKeysManage.spec().capacity()).isEqualTo(20);
     }
 
     @Test

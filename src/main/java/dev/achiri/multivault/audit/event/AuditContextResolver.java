@@ -50,4 +50,28 @@ public class AuditContextResolver {
                 clientIpResolver.resolve(request).orElse(null),
                 request.getHeader("User-Agent"));
     }
+
+    public AuditContext resolvePrincipal(Authentication authentication, HttpServletRequest request) {
+        if (authentication != null && authentication.getPrincipal() instanceof TenantUserPrincipal tenantUser) {
+            return new AuditContext(
+                    tenantUser.tenantId(),
+                    tenantUser.memberId(),
+                    null,
+                    ActorType.TENANT_USER,
+                    clientIpResolver.resolve(request).orElse(null),
+                    request.getHeader("User-Agent"));
+        }
+        if (authentication != null && authentication.getPrincipal() instanceof ApiKeyPrincipal apiKey) {
+            return new AuditContext(
+                    apiKey.tenantId(),
+                    null,
+                    apiKey.keyId(),
+                    ActorType.API_KEY,
+                    clientIpResolver.resolve(request).orElse(null),
+                    request.getHeader("User-Agent"));
+        }
+        return new AuditContext(null, null, null, ActorType.SYSTEM,
+                clientIpResolver.resolve(request).orElse(null),
+                request.getHeader("User-Agent"));
+    }
 }

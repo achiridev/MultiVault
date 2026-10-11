@@ -20,6 +20,9 @@ import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 
+import org.springframework.dao.DataIntegrityViolationException;
+
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -224,5 +227,22 @@ class ApiKeyFilterIntegrationTest extends BaseIntegrationTest {
                   "clockSkewSeconds": 60
                 }
                 """;
+    }
+
+    @Test
+    void databaseConstraintRejectsWildcardScope() {
+        ApiKey key = new ApiKey();
+        key.setTenantId(tenantId);
+        key.setName("Illegal Wildcard Key");
+        String rawKey = randomRawKey();
+        key.setKeyPrefix(rawKey.substring(0, 12));
+        key.setKeyHash(apiKeyHasher.sha256Hex(rawKey));
+        key.setKeyType(ApiKeyType.SERVICE);
+        key.setScopes(List.of("*"));
+        key.setCreatedByUserId(USER_ID);
+
+        assertThatThrownBy(() -> apiKeyRepository.saveAndFlush(key))
+                .isInstanceOf(DataIntegrityViolationException.class)
+                .hasMessageContaining("chk_no_wildcard_scope");
     }
 }

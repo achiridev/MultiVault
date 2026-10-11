@@ -67,6 +67,13 @@ multivault:
           capacity: 200
           refill-tokens: 200
           refill-period: PT1H
+      - id: api-keys-manage
+        match: ["POST:/api/v1/api-keys", "DELETE:/api/v1/api-keys/*"]
+        scopes: [API_KEY, TENANT]
+        spec:
+          capacity: 20
+          refill-tokens: 20
+          refill-period: PT1H
       - id: api-default
         match: ["/api/**"]
         scopes: [IP]

@@ -12,12 +12,10 @@ import static org.assertj.core.api.Assertions.assertThat;
 class ScopeAuthoritiesTest {
 
     @Test
-    void expandsWildcardToWholeCatalog() {
-        List<String> authorities = names(ScopeAuthorities.from(List.of(Scopes.WILDCARD)));
+    void mapsScopesToAuthoritiesWithPrefix() {
+        List<String> authorities = names(ScopeAuthorities.from(List.of(Scopes.DOCUMENTS_READ, Scopes.DOCUMENTS_WRITE)));
 
-        assertThat(authorities).containsExactlyElementsOf(
-                Scopes.all().stream().map(scope -> "SCOPE_" + scope).toList());
-        assertThat(authorities).hasSize(Scopes.all().size());
+        assertThat(authorities).containsExactly("SCOPE_documents:read", "SCOPE_documents:write");
     }
 
     @Test
@@ -32,14 +30,6 @@ class ScopeAuthoritiesTest {
     @Test
     void returnsEmptyForNoScopes() {
         assertThat(ScopeAuthorities.from(List.of())).isEmpty();
-    }
-
-    @Test
-    void deduplicatesScopesCoveredByWildcard() {
-        List<String> authorities = names(ScopeAuthorities.from(List.of(Scopes.WILDCARD, Scopes.DOCUMENTS_READ)));
-
-        assertThat(authorities).hasSize(Scopes.all().size()).doesNotHaveDuplicates();
-        assertThat(authorities).contains("SCOPE_documents:read");
     }
 
     @Test

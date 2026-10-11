@@ -165,6 +165,11 @@ public class GlobalExceptionHandler {
         return ResponseEntity.status(HttpStatus.CONFLICT).body(error);
     }
 
+    @ExceptionHandler(ScopeInvalidoException.class)
+    public ResponseEntity<ErrorResponse> handleScopeInvalido(ScopeInvalidoException ex) {
+        return ResponseEntity.badRequest().body(error(400, ex.getMessage()));
+    }
+
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ErrorResponse> manejarGeneral(Exception ex) {
         log.error("Error interno no controlado", ex);

@@ -68,6 +68,7 @@ Punto de entrada único. Lee este archivo primero, luego los documentos relevant
 | [ADR-0016](06-Decisiones/ADR-0016.md) | Control de abuso del onboarding: rate limit por IP, idempotencia y aprovisionamiento asíncrono |
 | [ADR-0017](06-Decisiones/ADR-0017.md) | El actor de una escritura se referencia por el `subject` del IdP, no por un UUID libre |
 | [ADR-0018](06-Decisiones/ADR-0018.md) | Posicionamiento y modelo de identidad |
+| [ADR-0019](06-Decisiones/ADR-0019.md) | Key de bootstrap con scopes acotados y gestión de API keys por API |
 
 ## 99-Templates
 

@@ -45,7 +45,7 @@ Response `202 Accepted`:
   "subscription": { "id": "...", "planId": "...", "planCode": "PRO", "status": "ACTIVE" },
   "admin": { "memberId": "...", "subject": "sub_123", "email": "admin@acme.com", "displayName": "Jane Doe" },
   "identityProvider": { "issuer": "...", "jwksUri": "...", "audience": "...", "allowedAlgorithms": ["RS256"], "clockSkewSeconds": 90 },
-  "apiKey": { "id": "...", "name": "Initial Admin Key", "keyPrefix": "mv_live_a1b2", "keyType": "SERVICE", "key": "mv_live_..." }
+  "apiKey": { "id": "...", "name": "Tenant Admin Key", "keyPrefix": "mv_live_a1b2", "keyType": "SERVICE", "key": "mv_live_..." }
 }
 ```
 
@@ -124,6 +124,9 @@ Scopes requeridos por los endpoints implementados:
 | `POST /api/v1/documents`, `POST /api/v1/documents/{id}/versions` | `documents:write` |
 | `GET /api/v1/documents/{id}` | `documents:read` |
 | `PUT /api/v1/tenants/identity-provider`, `PUT /api/v1/tenants/status` | `tenant:settings:write` (solo credencial SERVICE, ADR-0012) |
+| `POST /api/v1/api-keys` | `api_keys:manage` |
+| `GET /api/v1/api-keys` | `api_keys:read` |
+| `DELETE /api/v1/api-keys/{id}` | `api_keys:manage` |
 
 ### PUT `/api/v1/tenants/identity-provider` — Actualizar identity provider (implementado)
 
@@ -246,6 +249,42 @@ Request (`multipart/form-data`):
 
 Devuelve el documento con su versión actual. `404` si no existe o pertenece a otro tenant (el aislamiento lo da el routing por schema del request). `200` con la misma estructura de `POST /api/v1/documents`.
 
+### Endpoints de gestión de API keys (implementado)
+
+El tenant del caller se extrae de `CurrentTenant.tenantId()` (patrón ADR-0012); no hay `tenantId` en el path (IDOR cerrado por construcción). Acepta tanto la key raíz SERVICE con `api_keys:*` como un humano con `STANDARD` + JWT que tenga el scope equivalente.
+
+#### POST `/api/v1/api-keys` — Emitir nueva API key
+
+Scope `api_keys:manage`. Crea y devuelve una API key nueva; la key raw se devuelve **una única vez** en el campo `key`.
+
+Request:
+```json
+{ "name": "Docs Writer", "keyType": "STANDARD", "scopes": ["documents:write"], "expiresAt": "2027-01-01T00:00:00Z" }
+```
+`expiresAt` opcional (null = sin expiración). `scopes` debe ser subconjunto de `Scopes.all()`; `*` rechazado con `400`. Solo puede haber una key activa con `api_keys:manage` por tenant (409 con mensaje de lockout si ya existe).
+
+Response `201 Created`:
+```json
+{ "id": "...", "name": "Docs Writer", "keyPrefix": "mv_live_a1b2", "keyType": "STANDARD", "scopes": ["documents:write"], "createdAt": "...", "expiresAt": "2027-01-01T00:00:00Z", "revokedAt": null, "key": "mv_live_..." }
+```
+
+`400` si scopes vacíos, contienen `*` o no están en el catálogo; `400` si `expiresAt` está en el pasado; `409` si ya existe una key activa con `api_keys:manage`.
+
+#### GET `/api/v1/api-keys` — Listar API keys del tenant
+
+Scope `api_keys:read`. Parámetro opcional `includeRevoked=false`. Devuelve todas las keys del tenant del caller. El campo `keyHash` nunca aparece en la respuesta.
+
+Response `200 OK`:
+```json
+[{ "id": "...", "name": "Docs Writer", "keyPrefix": "mv_live_a1b2", "keyType": "STANDARD", "scopes": ["documents:write"], "createdAt": "...", "lastUsedAt": "...", "expiresAt": "2027-01-01T00:00:00Z", "revokedAt": null }]
+```
+
+#### DELETE `/api/v1/api-keys/{id}` — Revocar API key
+
+Scope `api_keys:manage`. Idempotente: si la key ya está revocada devuelve `204` sin error. `404` tanto si la key no existe como si pertenece a otro tenant (no se confirma existencia ajena). `409` si es la única key activa con `api_keys:manage` (protección anti-lockout). Al revocar, invalida la entrada de caché y publica el evento `API_KEY_REVOKED` en auditoría.
+
+Rate limit: 20 emisiones y revocaciones por hora (`api-keys-manage`), scope `API_KEY + TENANT`.
+
 ## Información encontrada
 
 Existen controladores REST (`TenantController` en `/api/v1/tenants`) sobre Servlet (`spring-boot-starter-webmvc`).
@@ -263,13 +302,14 @@ Existen controladores REST (`TenantController` en `/api/v1/tenants`) sobre Servl
 | PATCH | `/api/v1/tenants/{id}` | Actualizar tenant |
 | DELETE | `/api/v1/tenants/{id}` | Eliminar tenant |
 
-#### Autenticación
+#### Autenticación / API keys
 | Método | Path | Descripción |
 |---|---|---|
 | POST | `/api/v1/auth/login` | Login de platform_user |
-| POST | `/api/v1/auth/api-keys` | Crear API key |
-| GET | `/api/v1/auth/api-keys` | Listar API keys |
-| DELETE | `/api/v1/auth/api-keys/{id}` | Revocar API key |
+| POST | `/api/v1/api-keys` | ✅ Emitir API key (scope `api_keys:manage`) |
+| GET | `/api/v1/api-keys` | ✅ Listar API keys del tenant (scope `api_keys:read`) |
+| DELETE | `/api/v1/api-keys/{id}` | ✅ Revocar API key (scope `api_keys:manage`) |
+
 
 #### Documentos (scope del tenant)
 | Método | Path | Descripción |

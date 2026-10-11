@@ -28,7 +28,11 @@ public final class Scopes {
     public static final String SYSTEM_WEBHOOKS = "system:webhooks";
     public static final String SYSTEM_HEALTH = "system:health";
 
-    public static final String WILDCARD = "*";
+    public static final List<String> ADMIN = List.of(
+            API_KEYS_READ,
+            API_KEYS_MANAGE,
+            TENANT_SETTINGS_WRITE
+    );
 
     private static final List<String> ALL = List.of(
             DOCUMENTS_READ, DOCUMENTS_WRITE, DOCUMENTS_DELETE,
@@ -45,5 +49,9 @@ public final class Scopes {
 
     public static List<String> all() {
         return ALL;
+    }
+
+    public static List<String> admin() {
+        return ADMIN;
     }
 }

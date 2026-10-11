@@ -6,7 +6,7 @@ Documentar el modelo de autenticación del sistema, que soporta tres mecanismos:
 
 ## Estado actual
 
-El modelo de datos para autenticación está definido en el schema público. Spring Security está implementado con dos filtros: `ApiKeyAuthenticationFilter` (API keys M2M) y `JwtAuthenticationFilter` (JWT multi-issuer vía JWKS con caché Redis). El JWT de tenant nunca autentica solo: siempre exige una API key STANDARD del mismo tenant (ADR-0011). La key inicial del onboarding es un **SERVICE key con scope `*` (llave maestra)**, y los endpoints de configuración del tenant derivan su tenant del principal autenticado, sin path (ADR-0012). Login de platform_user pendiente.
+El modelo de datos para autenticación está definido en el schema público. Spring Security está implementado con dos filtros: `ApiKeyAuthenticationFilter` (API keys M2M) y `JwtAuthenticationFilter` (JWT multi-issuer vía JWKS con caché Redis). El JWT de tenant nunca autentica solo: siempre exige una API key STANDARD del mismo tenant (ADR-0011). La key inicial del onboarding es una **SERVICE key con scopes acotados `[api_keys:read, api_keys:manage, tenant:settings:write]` permanente (sin TTL)** (ADR-0019, sustituye la llave maestra `*` de ADR-0012). La emisión y revocación de API keys se realiza vía `/api/v1/api-keys`, y los endpoints de configuración del tenant derivan su tenant del principal autenticado, sin path. Login de platform_user pendiente.
 
 ## Información encontrada
 
@@ -67,18 +67,21 @@ CREATE TABLE api_key (
     key_type          VARCHAR(10) NOT NULL DEFAULT 'STANDARD'
         CHECK (key_type IN ('SERVICE', 'STANDARD')),
     scopes            TEXT[] NOT NULL DEFAULT '{}',
-    created_by_user_id UUID NOT NULL,
+    created_by_user_id UUID,
+    created_by_api_key_id UUID REFERENCES api_key(id) ON DELETE SET NULL,
     last_used_at      TIMESTAMPTZ,
     expires_at        TIMESTAMPTZ,
-    revoked_at        TIMESTAMPTZ
+    revoked_at        TIMESTAMPTZ,
+    CONSTRAINT chk_api_key_actor CHECK (created_by_user_id IS NOT NULL OR created_by_api_key_id IS NOT NULL),
+    CONSTRAINT chk_no_wildcard_scope CHECK (NOT ('*' = ANY(scopes)))
 );
 ```
 
-- **SERVICE:** Sin humano detrás (sync, backup, health, webhooks, **administración del tenant: identity-provider y status**). Autentica solo, sin JWT.
+- **SERVICE:** Sin humano detrás (sync, backup, health, webhooks, **administración del tenant: identity-provider, status y gestión de keys**). Autentica solo, sin JWT.
 - **STANDARD:** Uso normal; exige JWT del mismo tenant junto a la key, y el JWT a su vez exige la key (ADR-0011). Ningún request entra solo con JWT
 - Solo se almacena el hash; la key raw se muestra una única vez al crearla
 - Índice único parcial sobre `key_hash WHERE revoked_at IS NULL`
-- Al crear un tenant, el onboarding genera automáticamente la **API key inicial del admin** (`ApiKeyService.createInitial`): raw `mv_live_` + 40 hex, `key_prefix` = primeros 12 chars, hash SHA-256, `key_type = SERVICE`, `scopes = ['*']` (llave maestra, expande al catálogo completo de scopes, ADR-0012), `created_by_user_id = tenant_member.id` del admin. La raw se devuelve una sola vez en la respuesta de `POST /api/v1/tenants`. El scope `*` se expande por `ScopeAuthorities.from` (común a ambos filtros) a `Scopes.all()` → authorities reales `SCOPE_<scope>`, deduplicadas.
+- Al crear un tenant, el onboarding genera automáticamente la **API key inicial del admin** (`ApiKeyService.createInitial`): raw `mv_live_` + 40 hex, `key_prefix` = primeros 12 chars, hash SHA-256, `key_type = SERVICE`, `scopes = ['api_keys:read', 'api_keys:manage', 'tenant:settings:write']` (sin wildcard `*`, ADR-0019), permanente (`expires_at = null`), `created_by_user_id = tenant_member.id` del admin. La raw se devuelve una sola vez en la respuesta de `POST /api/v1/tenants`. Las credenciales para operar documentos se emiten posteriormente vía `POST /api/v1/api-keys`. Scopes se mapean con `ScopeAuthorities.from` directamente a authorities `SCOPE_<scope>`, deduplicadas (sin expansión de `*`).
 
 ### Validación de API keys por request (`ApiKeyAuthenticationFilter`)
 
@@ -92,15 +95,16 @@ CREATE TABLE api_key (
 
 ### Autorización por scopes
 
-Los scopes de la key (`api_key.scopes`, TEXT[]) son el mecanismo de autorización por endpoint. Ambos filtros los mapean a authorities `SCOPE_<scope>` en el SecurityContext con el helper compartido `infrastructure/security/ScopeAuthorities.from` (expande `*` → `Scopes.all()` y deduplica); `SecurityConfig` activa `@EnableMethodSecurity` y cada controller declara `@PreAuthorize("hasAuthority('SCOPE_...')")`. Sin el scope → `403` (`AccessDeniedException` mapeado a JSON en `GlobalExceptionHandler`). `SecurityConfig` solo resuelve quién entra (`authenticated()`); los scopes se evalúan a nivel de método, no por URL.
+Los scopes de la key (`api_key.scopes`, TEXT[]) son el mecanismo de autorización por endpoint. Ambos filtros los mapean a authorities `SCOPE_<scope>` en el SecurityContext con el helper compartido `infrastructure/security/ScopeAuthorities.from` (deduplica y prefija con `SCOPE_`); `SecurityConfig` activa `@EnableMethodSecurity` y cada controller declara `@PreAuthorize("hasAuthority('SCOPE_...')")`. Sin el scope → `403` (`AccessDeniedException` mapeado a JSON en `GlobalExceptionHandler`). `SecurityConfig` solo resuelve quién entra (`authenticated()`); los scopes se evalúan a nivel de método, no por URL.
 
 Catálogo actual (patrón `recurso:accion`):
 
 | Recurso | Scopes |
 |---|---|
 | Documentos | `documents:read` (get), `documents:write` (crear, subir versión) |
-| Tenant (admin) | `tenant:settings:write` (identity-provider, status) — ejercido por la key SERVICE del propio tenant (ADR-0012) |
-| Pendiente (endpoints no implementados) | `folders:*`, `permissions:*`, `api_keys:*`, `tenant:settings:read`, `audit:read`, `system:sync|backup|webhooks|health` (SERVICE) |
+| Tenant (admin) | `tenant:settings:write` (identity-provider, status) — ejercido por credencial SERVICE (ADR-0012) o STANDARD con JWT |
+| Gestión de keys | `api_keys:read` (listar), `api_keys:manage` (crear, revocar) — ADR-0019 |
+| Pendiente (endpoints no implementados) | `folders:*`, `permissions:*`, `tenant:settings:read`, `audit:read`, `system:sync|backup|webhooks|health` (SERVICE) |
 
 El hash se extrajo a `apikey/service/ApiKeyHasher` (reutilizado por `ApiKeyService` y el filtro).
 
@@ -166,12 +170,12 @@ El `log.warn` es deliberado y no un `audit_log`: el desacuerdo es un **estado pe
 - [x] Implementar `JwtDecoder` multi-issuer que use `tenant_identity_provider` para obtener claves públicas
 - [x] Implementar `ApiKeyFilter` para autenticación vía API keys
 - [ ] Implementar `PlatformUserAuthenticationProvider` para login de staff
-- [ ] Implementar servicio de creación/rotación de API keys
+- [x] Implementar servicio de creación, listado y revocación de API keys (`/api/v1/api-keys`) — ADR-0019
 - [x] Implementar `TenantMemberService` para upsert de miembros
 - [x] Resolver el actor de una escritura por claim `sub` del IdP en credenciales SERVICE — ADR-0017
 - [ ] Agregar endpoint de login para platform_user
-- [ ] Agregar endpoint de refresh de API keys
-- [x] Implementar creación de API keys (key inicial del admin en onboarding); rotación pendiente
+- [ ] Agregar rotación automática de API keys
+- [x] Implementar creación de API keys (key inicial acotada en onboarding y emisión de credenciales derivadas vía API) — ADR-0019
 
 ## Preguntas abiertas
 

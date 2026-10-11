@@ -47,8 +47,11 @@ public class ApiKey extends BaseEntity {
     @Column(name = "scopes", nullable = false)
     private List<String> scopes = List.of();
 
-    @Column(name = "created_by_user_id", nullable = false)
+    @Column(name = "created_by_user_id")
     private UUID createdByUserId;
+
+    @Column(name = "created_by_api_key_id")
+    private UUID createdByApiKeyId;
 
     @Column(name = "last_used_at")
     private Instant lastUsedAt;

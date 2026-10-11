@@ -1,6 +1,7 @@
 package dev.achiri.multivault.tenant.service;
 
 import dev.achiri.multivault.apikey.repository.ApiKeyRepository;
+import dev.achiri.multivault.infrastructure.security.apikey.ApiKeyCacheEvictor;
 import dev.achiri.multivault.audit.event.AuditEvent;
 import dev.achiri.multivault.audit.event.AuditEventPublisher;
 import dev.achiri.multivault.audit.model.ActorType;
@@ -32,6 +33,7 @@ public class TenantLifecycleService {
     private final ApiKeyRepository apiKeyRepository;
     private final TenantMemberRepository tenantMemberRepository;
     private final AuditEventPublisher auditEventPublisher;
+    private final ApiKeyCacheEvictor apiKeyCacheEvictor;
 
     @Transactional
     public TenantStatusResponse updateStatus(UUID tenantId, UpdateTenantStatusRequest request) {
@@ -155,6 +157,7 @@ public class TenantLifecycleService {
     }
 
     private void revokeAllApiKeys(UUID tenantId) {
+        apiKeyCacheEvictor.evictByTenant(tenantId);
         apiKeyRepository.revokeAllByTenantId(tenantId, Instant.now());
     }
 

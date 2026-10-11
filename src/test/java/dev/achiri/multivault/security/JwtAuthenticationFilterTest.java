@@ -89,9 +89,9 @@ class JwtAuthenticationFilterTest {
     }
 
     @Test
-    void expandsWildcardScopeOfStandardKey() throws Exception {
+    void authenticatesWithAllScopesOfStandardKey() throws Exception {
         MockHttpServletRequest request = bearerRequest("some.jwt.token");
-        request.setAttribute(ApiKeyAuthenticationFilter.STANDARD_API_KEY_ATTR, standardKey(TENANT_ID, List.of(Scopes.WILDCARD)));
+        request.setAttribute(ApiKeyAuthenticationFilter.STANDARD_API_KEY_ATTR, standardKey(TENANT_ID, Scopes.all()));
         FilterChain chain = mock(FilterChain.class);
         when(jwtDecoder.authenticate("some.jwt.token"))
                 .thenReturn(new ValidatedJwt(TENANT_ID, "user-1", "user@test.com", "User One"));
