@@ -1,11 +1,11 @@
 package dev.achiri.multivault.infrastructure.security.config;
 
 import dev.achiri.multivault.infrastructure.persistence.tenant.context.TenantContextFilter;
-import dev.achiri.multivault.infrastructure.ratelimit.web.RateLimitFilter;
+import dev.achiri.multivault.infrastructure.ratelimit.web.IpRateLimitFilter;
+import dev.achiri.multivault.infrastructure.ratelimit.web.TenantRateLimitFilter;
 import dev.achiri.multivault.infrastructure.security.apikey.ApiKeyAuthenticationFilter;
 import dev.achiri.multivault.infrastructure.security.jwt.JwtAuthenticationFilter;
 import jakarta.servlet.Filter;
-import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.web.servlet.FilterRegistrationBean;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -31,14 +31,12 @@ public class SecurityFilterRegistrationConfig {
     }
 
     @Bean
-    FilterRegistrationBean<RateLimitFilter> disableIpRateLimitFilterRegistration(
-            @Qualifier("ipRateLimitFilter") RateLimitFilter filter) {
+    FilterRegistrationBean<IpRateLimitFilter> disableIpRateLimitFilterRegistration(IpRateLimitFilter filter) {
         return disabled(filter);
     }
 
     @Bean
-    FilterRegistrationBean<RateLimitFilter> disableTenantRateLimitFilterRegistration(
-            @Qualifier("tenantRateLimitFilter") RateLimitFilter filter) {
+    FilterRegistrationBean<TenantRateLimitFilter> disableTenantRateLimitFilterRegistration(TenantRateLimitFilter filter) {
         return disabled(filter);
     }
 

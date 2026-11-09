@@ -1,11 +1,12 @@
 package dev.achiri.multivault.infrastructure.security.config;
 
 import dev.achiri.multivault.infrastructure.persistence.tenant.context.TenantContextFilter;
-import dev.achiri.multivault.infrastructure.ratelimit.web.RateLimitFilter;
+import dev.achiri.multivault.infrastructure.ratelimit.web.IpRateLimitFilter;
+import dev.achiri.multivault.infrastructure.ratelimit.web.TenantRateLimitFilter;
 import dev.achiri.multivault.infrastructure.security.apikey.ApiKeyAuthenticationFilter;
 import dev.achiri.multivault.infrastructure.security.handler.RestAuthenticationEntryPoint;
 import dev.achiri.multivault.infrastructure.security.jwt.JwtAuthenticationFilter;
-import org.springframework.beans.factory.annotation.Qualifier;
+import jakarta.servlet.Filter;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
@@ -15,6 +16,8 @@ import org.springframework.security.config.annotation.web.configuration.EnableWe
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
+
+import java.util.List;
 
 @Configuration
 @EnableWebSecurity
@@ -28,8 +31,8 @@ public class SecurityConfig {
             JwtAuthenticationFilter jwtAuthenticationFilter,
             TenantContextFilter tenantContextFilter,
             RestAuthenticationEntryPoint restAuthenticationEntryPoint,
-            @Qualifier("ipRateLimitFilter") RateLimitFilter ipRateLimitFilter,
-            @Qualifier("tenantRateLimitFilter") RateLimitFilter tenantRateLimitFilter) throws Exception {
+            IpRateLimitFilter ipRateLimitFilter,
+            TenantRateLimitFilter tenantRateLimitFilter) throws Exception {
 
         http
                 .csrf(csrf -> csrf.disable())
@@ -45,12 +48,27 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.POST, "/api/v1/api-keys").authenticated()
                         .requestMatchers(HttpMethod.GET, "/api/v1/api-keys").authenticated()
                         .requestMatchers(HttpMethod.DELETE, "/api/v1/api-keys/*").authenticated()
-                        .anyRequest().authenticated())
-                .addFilterBefore(ipRateLimitFilter, UsernamePasswordAuthenticationFilter.class)
-                .addFilterBefore(apiKeyAuthenticationFilter, UsernamePasswordAuthenticationFilter.class)
-                .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class)
-                .addFilterAfter(tenantRateLimitFilter, JwtAuthenticationFilter.class)
-                .addFilterAfter(tenantContextFilter, JwtAuthenticationFilter.class);
+                        .anyRequest().authenticated());
+
+        registerSecurityFiltersInExecutionOrder(http, List.of(
+                ipRateLimitFilter,
+                apiKeyAuthenticationFilter,
+                jwtAuthenticationFilter,
+                tenantRateLimitFilter,
+                tenantContextFilter));
         return http.build();
+    }
+
+    private static void registerSecurityFiltersInExecutionOrder(HttpSecurity http, List<Filter> executionOrder) {
+        if (executionOrder.stream().map(Object::getClass).distinct().count() != executionOrder.size()) {
+            throw new IllegalStateException("Los filtros de la cadena de seguridad deben ser de clases distintas");
+        }
+
+        Class<? extends Filter> anchor = UsernamePasswordAuthenticationFilter.class;
+        for (int i = executionOrder.size() - 1; i >= 0; i--) {
+            Filter filter = executionOrder.get(i);
+            http.addFilterBefore(filter, anchor);
+            anchor = filter.getClass();
+        }
     }
 }

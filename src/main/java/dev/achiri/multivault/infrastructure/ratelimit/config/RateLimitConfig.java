@@ -4,12 +4,12 @@ import dev.achiri.multivault.infrastructure.ratelimit.handler.JsonErrorWriter;
 import dev.achiri.multivault.infrastructure.ratelimit.listener.RateLimitMetricsListener;
 import dev.achiri.multivault.infrastructure.ratelimit.redis.RedisRateLimiter;
 import dev.achiri.multivault.infrastructure.ratelimit.resilience.FailModeRateLimiter;
-import dev.achiri.multivault.infrastructure.ratelimit.model.RateLimitScope;
 import dev.achiri.multivault.infrastructure.ratelimit.resilience.LocalRateLimiter;
 import dev.achiri.multivault.infrastructure.ratelimit.spi.RateLimiter;
+import dev.achiri.multivault.infrastructure.ratelimit.web.IpRateLimitFilter;
 import dev.achiri.multivault.infrastructure.ratelimit.web.IpRateLimitKeyResolver;
-import dev.achiri.multivault.infrastructure.ratelimit.web.RateLimitFilter;
 import dev.achiri.multivault.infrastructure.ratelimit.web.RateLimitRuleMatcher;
+import dev.achiri.multivault.infrastructure.ratelimit.web.TenantRateLimitFilter;
 import dev.achiri.multivault.infrastructure.ratelimit.web.TenantRateLimitKeyResolver;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
@@ -17,7 +17,6 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
 import java.util.List;
-import java.util.Set;
 
 @Slf4j
 @Configuration
@@ -45,18 +44,16 @@ public class RateLimitConfig {
     }
 
     @Bean
-    RateLimitFilter ipRateLimitFilter(RateLimitRuleMatcher ruleMatcher, RateLimiter rateLimiter,
-                                      IpRateLimitKeyResolver keyResolver, RateLimitMetricsListener metrics,
-                                      JsonErrorWriter jsonErrorWriter, RateLimitProperties properties) {
-        return new RateLimitFilter(ruleMatcher, rateLimiter, keyResolver, metrics, jsonErrorWriter,
-                Set.of(RateLimitScope.IP, RateLimitScope.GLOBAL), properties);
+    IpRateLimitFilter ipRateLimitFilter(RateLimitRuleMatcher ruleMatcher, RateLimiter rateLimiter,
+                                        IpRateLimitKeyResolver keyResolver, RateLimitMetricsListener metrics,
+                                        JsonErrorWriter jsonErrorWriter, RateLimitProperties properties) {
+        return new IpRateLimitFilter(ruleMatcher, rateLimiter, keyResolver, metrics, jsonErrorWriter, properties);
     }
 
     @Bean
-    RateLimitFilter tenantRateLimitFilter(RateLimitRuleMatcher ruleMatcher, RateLimiter rateLimiter,
-                                          TenantRateLimitKeyResolver keyResolver, RateLimitMetricsListener metrics,
-                                          JsonErrorWriter jsonErrorWriter, RateLimitProperties properties) {
-        return new RateLimitFilter(ruleMatcher, rateLimiter, keyResolver, metrics, jsonErrorWriter,
-                Set.of(RateLimitScope.TENANT, RateLimitScope.API_KEY), properties);
+    TenantRateLimitFilter tenantRateLimitFilter(RateLimitRuleMatcher ruleMatcher, RateLimiter rateLimiter,
+                                                TenantRateLimitKeyResolver keyResolver, RateLimitMetricsListener metrics,
+                                                JsonErrorWriter jsonErrorWriter, RateLimitProperties properties) {
+        return new TenantRateLimitFilter(ruleMatcher, rateLimiter, keyResolver, metrics, jsonErrorWriter, properties);
     }
 }
