@@ -76,8 +76,9 @@ Si Redis no está disponible, el límite degrada a un bucket en memoria **por in
 (`fail-mode: CLOSED`): el servicio nunca queda sin límite. Con `fail-mode: OPEN` el tráfico
 se deixa pasar sin limitación y el corte global deja de ser un límite de coste.
 
-`multivault.ratelimit.enabled=false` es un kill switch real: ambos `RateLimitFilter` se
-registran en la `SecurityFilterChain` pero no aplican ningún límite. El arranque registra un
+`multivault.ratelimit.enabled=false` es un kill switch real: ambos filtros de rate limit
+(`IpRateLimitFilter` y `TenantRateLimitFilter`) se registran en la `SecurityFilterChain`
+pero no aplican ningún límite. El arranque registra un
 `WARN`; con `enabled=true` registra un `INFO` con `failMode` y el número de reglas, para que un
 operador pueda confirmar en los logs si el rate limiting está activo en esa instancia.
 

@@ -2,7 +2,8 @@ package dev.achiri.multivault.security;
 
 import dev.achiri.multivault.infrastructure.idempotency.web.IdempotencyFilter;
 import dev.achiri.multivault.infrastructure.persistence.tenant.context.TenantContextFilter;
-import dev.achiri.multivault.infrastructure.ratelimit.web.RateLimitFilter;
+import dev.achiri.multivault.infrastructure.ratelimit.web.IpRateLimitFilter;
+import dev.achiri.multivault.infrastructure.ratelimit.web.TenantRateLimitFilter;
 import dev.achiri.multivault.infrastructure.security.apikey.ApiKeyAuthenticationFilter;
 import dev.achiri.multivault.infrastructure.security.jwt.JwtAuthenticationFilter;
 import dev.achiri.multivault.support.BaseIntegrationTest;
@@ -31,7 +32,8 @@ class SecurityFilterRegistrationTest extends BaseIntegrationTest {
                         ApiKeyAuthenticationFilter.class,
                         JwtAuthenticationFilter.class,
                         TenantContextFilter.class,
-                        RateLimitFilter.class);
+                        IpRateLimitFilter.class,
+                        TenantRateLimitFilter.class);
     }
 
     @Test
@@ -41,8 +43,8 @@ class SecurityFilterRegistrationTest extends BaseIntegrationTest {
                         ApiKeyAuthenticationFilter.class,
                         JwtAuthenticationFilter.class,
                         TenantContextFilter.class,
-                        RateLimitFilter.class,
-                        RateLimitFilter.class);
+                        IpRateLimitFilter.class,
+                        TenantRateLimitFilter.class);
     }
 
     @Test

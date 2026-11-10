@@ -49,14 +49,16 @@ Versiones de Testcontainers vía `testcontainers-bom` (`testcontainers.version` 
 ### Clase base: `BaseIntegrationTest`
 
 - `src/test/java/dev/achiri/multivault/support/BaseIntegrationTest.java`
-- `@SpringBootTest` + `@ActiveProfiles("test")` + `@ServiceConnection` sobre un `PostgreSQLContainer` **estático**.
-- El contenedor se inicia manualmente en un bloque `static` (no con la extensión `@Testcontainers`): así **un solo contenedor** es compartido por toda la suite y no se detiene entre clases (la extensión lo paraba tras la primera clase y rompía las siguientes).
-- `@ServiceConnection` hace que la autoconfiguración del DataSource use el contenedor **ignorando** `spring.datasource.url` y las env vars (`DB_URL`, etc.). El Flyway de `public` y el provisioner de schema por tenant operan contra el contenedor.
+- `@SpringBootTest` + `@ActiveProfiles("test")` + `@ServiceConnection` sobre un `PostgreSQLContainer` y un `GenericContainer` de Redis **estáticos**.
+- Los contenedores se inician en los inicializadores de los campos (no con la extensión `@Testcontainers`): así **un solo par de contenedores** es compartido por toda la suite y no se detiene entre clases (la extensión los paraba tras la primera clase y rompía las siguientes).
+- Si Docker no puede crear los `veth` del bridge (por ejemplo, en sandboxes sin `CAP_NET_ADMIN`), `startPostgres`/`startRedis` detectan el fallo y reintentan con `--network host` en los puertos `55432` (PostgreSQL) y `56379` (Redis), sobreescribibles con `-Dmv.testcontainers.postgres-port` y `-Dmv.testcontainers.redis-port`. En CI con bridge normal se usan los puertos mapeados habituales.
+- `@ServiceConnection` hace que la autoconfiguración del DataSource y de Redis use los contenedores **ignorando** `spring.datasource.url` y las env vars (`DB_URL`, etc.). El Flyway de `public` y el provisioner de schema por tenant operan contra el contenedor.
 
 ### Configuración
 
 - `src/test/resources/application-test.yaml` — perfil `test` (datasource por defecto para resolver placeholders; el valor real lo aporta `@ServiceConnection`). También relaja `multivault.jwks` (`allow-http`, `allow-private-hosts`, `allowed-ports: "*"`, `verify-reachability: false`) porque los tests sirven el JWKS con el `HttpServer` del JDK sobre `http://localhost:<puerto efímero>` y varios usan `https://idp.acme.com/...` sin red. `JwksUriProvisioningTest` y `JwksReachabilityProbeTest` revierten esos defaults con `@TestPropertySource` para ejercitar la política en modo estricto (ADR-0015).
 - `src/test/resources/docker-java.properties` — `api.version=1.44`: requerido porque docker-java de Testcontainers 1.21.x negocia API 1.32 y **Docker Engine ≥ 25 exige API ≥ 1.44** (ver ADR-0005).
+- `pom.xml` (Surefire) — `TESTCONTAINERS_RYUK_DISABLED=true`: Ryuk también necesita el bridge y falla en el mismo entorno. Sin Ryuk, Testcontainers usa su `JVMHookResourceReaper`, que limpia los contenedores al terminar la JVM. En CI normal se puede reactivar quitando esa variable.
 
 ## Correr tests
 
